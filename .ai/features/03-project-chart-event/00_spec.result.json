@@ -1,0 +1,49 @@
+{
+  "status": "PASS",
+  "next_stage": "01_plan",
+  "human_gate_required": true,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "spec: define project chart interactions",
+  "model_mismatch": false,
+  "actual_model": "Codex",
+  "produced_files": [
+    ".ai/features/03-project-chart-event/00_spec.md",
+    ".ai/features/03-project-chart-event/00_spec.result.json"
+  ],
+  "changed_files": [
+    ".ai/features/03-project-chart-event/00_spec.md",
+    ".ai/features/03-project-chart-event/00_spec.result.json"
+  ],
+  "verification_summary": "기존 StockChart SVG 구현, ChartPeriod 타입, Yahoo Finance 기간 매핑, useStockDetail 차트 fetch 흐름, 관련 프론트엔드/백엔드 테스트 위치를 확인하고 스펙 산출물만 작성했다. 프로덕션 코드와 테스트 코드는 변경하지 않았다.",
+  "history_notes": {
+    "implemented": [
+      "03-project-chart-event 00_spec.md 스펙 산출물을 작성했다.",
+      "하네스용 00_spec.result.json 결과 파일을 작성했다.",
+      "기간 선택 확장, 확대/축소, 드래그 이동, 미니맵 UX 요구사항과 검증 기준을 개발 가능한 수준으로 정리했다."
+    ],
+    "risks": [
+      "10년 일봉 데이터는 SVG 요소 수가 많아질 수 있으므로 구현 단계에서 visible range 렌더링 또는 미니맵 샘플링이 필요할 수 있다.",
+      "차트 wheel/drag 이벤트는 브라우저와 입력 장치별 동작 차이가 있어 Playwright 또는 DOM 이벤트 기반 검증이 필요하다.",
+      "현재 일부 한글 UI 문자열이 깨져 보이는 파일이 있어 신규 문자열 작성과 테스트 기대값 갱신 시 UTF-8 인코딩 확인이 필요하다."
+    ],
+    "future_improvements": [
+      "사용자 지정 시작일/종료일 조회를 별도 기능으로 확장할 수 있다.",
+      "기술적 분석 지표, 크로스헤어, 툴팁, 이동평균선은 차트 탐색 UX 안정화 이후 별도 단계에서 검토한다.",
+      "모바일 pinch zoom과 미니맵 직접 조작은 필요성이 확인되면 후속 기능으로 확장한다."
+    ],
+    "decisions": [
+      "feature_name_locked가 true이므로 기능명은 03-project-chart-event 그대로 유지했다.",
+      "기간 API 값은 기존 관례를 따라 1m, 3m, 6m, 1y, 3y, 5y, 10y, ytd로 정했다.",
+      "기본 기간은 초기 UI와 API period 생략 모두 1m로 정했다.",
+      "새 외부 차트 라이브러리 없이 기존 순수 SVG StockChart를 확장하는 방향을 기본값으로 정했다.",
+      "장기 기간도 확대 시 세부 확인이 가능하도록 기본 interval은 1d로 정했다.",
+      "미니맵은 확대된 상태에서만 우하단에 표시하는 기본 정책으로 정했다.",
+      "확대/이동 상태는 서버 API가 아니라 클라이언트 상태로 처리하기로 정했다.",
+      "defaults_mode와 interactive_mode 정책에 따라 추가 사용자 질문 없이 권장 기본값으로 PASS 처리했다."
+    ],
+    "unresolved_items": []
+  }
+}

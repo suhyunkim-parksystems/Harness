@@ -69,6 +69,28 @@ class StageRuntimeSelfTests(unittest.TestCase):
                     path,
                 )
 
+    def test_read_stage_result_json_accepts_utf8_bom(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "stage.result.json"
+            value = {
+                "status": "PASS",
+                "next_stage": "done",
+                "human_gate_required": False,
+                "blocking_reason": "",
+            }
+            path.write_bytes(b"\xef\xbb\xbf" + json.dumps(value).encode("utf-8"))
+
+            result = stage_runtime.read_stage_result_json(
+                HarnessContext.from_namespace(
+                    {
+                        "rel": lambda value: str(value),
+                    }
+                ),
+                path,
+            )
+
+            self.assertEqual(result, value)
+
     def test_git_head_changed_requires_two_distinct_heads(self) -> None:
         # git_head_changed is pure but now takes a leading ctx (harness-facing API).
         self.assertFalse(stage_runtime.git_head_changed({}, "", "after"))

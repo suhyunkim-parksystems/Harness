@@ -1,0 +1,20 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.0, pytest-9.0.3, pluggy-1.6.0
+rootdir: D:\WorkingDirectories\vibe-test\Harness_toy\Harness
+plugins: anyio-4.11.0, asyncio-1.4.0, mock-3.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 15 items
+
+tests\backend\test_frankfurter_provider.py ...                           [ 20%]
+tests\backend\test_market_service.py .....                               [ 53%]
+tests\backend\test_routes.py ..                                          [ 66%]
+tests\backend\test_stooq_provider.py ...                                 [ 86%]
+tests\scripts\test_batch_files.py ..                                     [100%]
+
+============================== warnings summary ===============================
+C:\Python312\Lib\site-packages\starlette\formparsers.py:12
+  C:\Python312\Lib\site-packages\starlette\formparsers.py:12: PendingDeprecationWarning: Please use `import python_multipart` instead.
+    import multipart
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 15 passed, 1 warning in 0.49s ========================

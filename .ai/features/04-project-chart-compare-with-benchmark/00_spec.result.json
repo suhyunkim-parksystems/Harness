@@ -1,0 +1,44 @@
+{
+  "status": "PASS",
+  "next_stage": "01_plan",
+  "human_gate_required": true,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "spec: define chart grid and korean search fixes",
+  "model_mismatch": false,
+  "actual_model": "Codex",
+  "produced_files": [
+    ".ai/features/04-project-chart-compare-with-benchmark/00_spec.md",
+    ".ai/features/04-project-chart-compare-with-benchmark/00_spec.result.json"
+  ],
+  "changed_files": [
+    ".ai/features/04-project-chart-compare-with-benchmark/00_spec.md",
+    ".ai/features/04-project-chart-compare-with-benchmark/00_spec.result.json"
+  ],
+  "verification_summary": "00_spec 단계 산출물 작성 완료. 코드와 테스트는 이 단계 정책에 따라 수정하거나 실행하지 않았다.",
+  "history_notes": {
+    "implemented": [
+      "차트 GRID 추가, 한국주식 자동완성/검색 디버깅, 기간 변경 후 확대/축소/미니맵 이벤트 복구 범위를 개발 가능한 스펙으로 확정했다."
+    ],
+    "risks": [
+      "현재 코드와 테스트에 깨진 한국어 문자열이 있어 검색 UI와 KRX CSV 파싱 테스트를 함께 복구해야 한다.",
+      "기간 변경 중 SVG가 언마운트되면 imperative wheel listener가 새 SVG에 재연결되지 않을 수 있다.",
+      "KRX provider 실패가 빈 검색 결과처럼 보일 수 있어 정상 빈 결과와 공급자 실패를 구분하기 어렵다."
+    ],
+    "future_improvements": [
+      "벤치마크 지수 또는 비교 종목과의 상대 수익률 차트는 별도 기능으로 다룬다.",
+      "초성 검색, 오타 보정, 검색 랭킹 고도화는 이번 수정 이후 별도 개선으로 검토한다."
+    ],
+    "decisions": [
+      "feature_name_locked 정책에 따라 기능명은 04-project-chart-compare-with-benchmark로 유지했다.",
+      "Grid는 가격 수평선, 날짜 세로 기준선, 거래량 보조선을 포함하는 것으로 기본 결정했다.",
+      "한국 종목 검색은 한글 종목명과 6자리 종목코드를 모두 지원하는 것으로 기본 결정했다.",
+      "기간 변경 시 zoom/pan 상태는 전체 범위로 초기화하고, 이후 새 데이터 기준으로 wheel/drag 이벤트가 다시 동작해야 한다.",
+      "새 차트 라이브러리나 외부 의존성은 도입하지 않는 것으로 기본 결정했다.",
+      "벤치마크 비교 차트는 원 요청에 포함되지 않아 이번 범위에서 제외했다."
+    ],
+    "unresolved_items": []
+  }
+}

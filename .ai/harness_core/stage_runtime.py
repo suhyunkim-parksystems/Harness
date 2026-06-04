@@ -63,7 +63,7 @@ def find_stage_result(ctx, text: str) -> dict[str, Any]:
 def parse_result_json_from_text(ctx, text: str) -> dict[str, Any]:
     fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.S | re.I)
     if fence:
-        text = fence.group(1).strip()
+        text = fence.group(1).strip().lstrip("\ufeff")
     else:
         start = text.find("{")
         end = text.rfind("}")
@@ -79,7 +79,7 @@ def parse_result_json_from_text(ctx, text: str) -> dict[str, Any]:
 
 def read_stage_result_json(ctx, path: Path) -> dict[str, Any]:
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
+        parsed = json.loads(path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as exc:
         raise HarnessError(f"Invalid stage result JSON in {ctx.rel(path)}: {exc}") from exc
     if not isinstance(parsed, dict):
@@ -404,7 +404,7 @@ def stage_artifact_signature(ctx, paths: list[Path]) -> tuple[tuple[str, int, in
 
 def read_live_stage_result(path: Path) -> dict[str, Any] | None:
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
+        parsed = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     return parsed if isinstance(parsed, dict) else None

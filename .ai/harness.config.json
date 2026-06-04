@@ -1,7 +1,7 @@
 {
     "providers": {
         "claude": {
-            "enabled": false
+            "enabled": true
         },
         "codex": {
             "enabled": true
@@ -109,6 +109,36 @@
                     "diff",
                     "--check"
                 ]
+            },
+            {
+                "name": "backend-tests",
+                "command": [
+                    "python",
+                    "-m",
+                    "pytest",
+                    "tests/backend",
+                    "tests/scripts",
+                    "-p",
+                    "no:cacheprovider"
+                ],
+                "cwd": "."
+            },
+            {
+                "name": "frontend-tests",
+                "command": [
+                    "npm.cmd",
+                    "test"
+                ],
+                "cwd": "src/frontend"
+            },
+            {
+                "name": "frontend-build",
+                "command": [
+                    "npm.cmd",
+                    "run",
+                    "build"
+                ],
+                "cwd": "src/frontend"
             }
         ]
     }

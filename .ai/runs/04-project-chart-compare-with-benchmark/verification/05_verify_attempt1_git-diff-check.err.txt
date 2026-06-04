@@ -1,0 +1,4 @@
+warning: in the working copy of '.ai/harness_core/history.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.ai/harness_core/json_io.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.ai/harness_core/stage_runtime.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.ai/selftests/test_stage_runtime.py', LF will be replaced by CRLF the next time Git touches it

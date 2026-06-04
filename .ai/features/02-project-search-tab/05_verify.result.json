@@ -1,0 +1,74 @@
+{
+  "status": "PASS",
+  "next_stage": "06_document",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "low",
+  "harness_commit_required": true,
+  "changed_files": [
+    ".ai/features/02-project-search-tab/05_verify.md",
+    ".ai/features/02-project-search-tab/05_verify.result.json"
+  ],
+  "produced_files": [
+    ".ai/features/02-project-search-tab/05_verify.md",
+    ".ai/features/02-project-search-tab/05_verify.result.json"
+  ],
+  "verification_summary": {
+    "decision_verification": "PASS",
+    "compatibility_verification": "PASS",
+    "behavior_verification": "PASS",
+    "existing_tests": {
+      "passed": 71,
+      "failed": 0
+    },
+    "commands_passed": [
+      "python -m py_compile <harness files>",
+      "git diff --check",
+      "python -m pytest tests/backend tests/scripts -p no:cacheprovider",
+      "npm.cmd test",
+      "npm.cmd run build"
+    ],
+    "commands_failed": [],
+    "browser_smoke": {
+      "status": "SKIPPED",
+      "reason": "Vite dev server started successfully on 127.0.0.1:5173, but Browser iab was not available in this session."
+    },
+    "harness_latest_result_file": ".ai/runs/02-project-search-tab/verification/latest.json",
+    "harness_latest_result_observed": false,
+    "harness_final_authority": true
+  },
+  "fix_inputs": {
+    "status": "NONE",
+    "items": [],
+    "reproduction_commands": [],
+    "added_test_files": [],
+    "expected_behavior": "All configured verification commands pass.",
+    "actual_behavior": "All configured verification commands passed."
+  },
+  "history_notes": {
+    "implemented": [
+      "04_fix의 stale fallback 보강, 부분 실패 격리, KRW 포맷, 한국/미국 차트 색상 분기 수정이 코드와 테스트에 반영되어 있음을 확인했다.",
+      "하네스 고정 검증 명령 기준으로 백엔드/스크립트 테스트 50개, 프론트엔드 테스트 21개, 프론트엔드 빌드가 통과했다."
+    ],
+    "risks": [
+      "실제 KRX/NASDAQ/Yahoo Finance 응답 구조나 접근 정책 변동은 외부 provider 잔여 위험으로 남는다.",
+      "현재 세션에서 Browser iab가 없어 실제 브라우저 smoke 확인은 수행하지 못했다."
+    ],
+    "future_improvements": [
+      "외부 provider 응답 구조 변경을 감지하는 계약 테스트나 관측 로그를 별도 운영 검증으로 보강할 수 있다.",
+      "추후 접근성 회귀를 줄이려면 검색 탭의 keyboard navigation 테스트를 더 세분화할 수 있다."
+    ],
+    "decisions": [
+      "05_verify 단계에서는 신규 테스트를 추가하지 않았다. 04_fix에서 추가한 회귀 테스트가 리뷰 must_fix 항목을 직접 검증하고, 전체 고정 검증 명령이 통과했기 때문이다.",
+      "하네스 설정에 이미 동일 검증 명령이 있으므로 JSON의 동적 test_commands는 추가하지 않았다."
+    ],
+    "unresolved_items": []
+  },
+  "verify_target_commit": "75acd85c6cba72358e2c2326ebb797975f97e1e8",
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "02-project-search-tab[20260604-231133][05_verify]",
+  "model_mismatch": false,
+  "actual_model": "Codex",
+  "harness_final_authority": true,
+  "test_commands": []
+}

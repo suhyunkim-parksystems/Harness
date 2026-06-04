@@ -1,0 +1,96 @@
+{
+  "status": "PASS",
+  "next_stage": "06_document",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "low",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_policy_result": "request_harness_commit_on_pass",
+  "commit_message_suggestion": "04-project-chart-compare-with-benchmark[20260605-011224][05_verify]",
+  "verify_target_commit": "ab506f23fcad3b3b771a2ee9e6e8002686a8731a",
+  "model_mismatch": false,
+  "actual_model": "Codex",
+  "harness_final_authority": true,
+  "produced_files": [
+    ".ai/features/04-project-chart-compare-with-benchmark/05_verify.md",
+    ".ai/features/04-project-chart-compare-with-benchmark/05_verify.result.json"
+  ],
+  "changed_files": [
+    ".ai/features/04-project-chart-compare-with-benchmark/05_verify.md",
+    ".ai/features/04-project-chart-compare-with-benchmark/05_verify.result.json"
+  ],
+  "verified_feature_changed_files": [
+    "src/backend/app/providers/krx_provider.py",
+    "src/backend/app/services/search_service.py",
+    "src/frontend/src/components/StockChart.tsx",
+    "src/frontend/src/services/chartHelpers.ts",
+    "tests/backend/test_krx_provider.py",
+    "tests/backend/test_search_service.py",
+    "tests/frontend/SearchTab.test.tsx",
+    "tests/frontend/StockChart.test.tsx"
+  ],
+  "verification_summary": {
+    "decision_verification": "PASS",
+    "compatibility_verification": "PASS",
+    "behavior_verification": "PASS",
+    "harness_result_file_exists_at_model_runtime": false,
+    "commands_run": [
+      {
+        "name": "harness_python_compile",
+        "result": "PASS"
+      },
+      {
+        "name": "git_diff_check",
+        "result": "PASS",
+        "note": "기존 .ai 파일 LF/CRLF 경고만 있었고 diff whitespace 오류는 없음"
+      },
+      {
+        "name": "backend-tests",
+        "result": "PASS",
+        "summary": "63 passed, 1 warning"
+      },
+      {
+        "name": "frontend-tests",
+        "result": "PASS",
+        "summary": "4 files / 63 tests passed"
+      },
+      {
+        "name": "frontend-build",
+        "result": "PASS"
+      }
+    ]
+  },
+  "test_commands": [],
+  "fix_inputs": {
+    "status": "NONE",
+    "items": [],
+    "reproduction_commands": [],
+    "verify_added_tests": [],
+    "expected_behavior": "",
+    "actual_behavior": ""
+  },
+  "history_notes": {
+    "implemented": [
+      "StockChart에 날짜 기준 세로 grid와 거래량 영역 기준선을 추가하고 날짜 라벨과 grid 위치를 sampleIndices로 공유하도록 검증함.",
+      "SVG remount 이후 wheel listener가 callback ref와 svgNode effect로 재바인딩되어 기간 변경 후 zoom/minimap 이벤트가 복구되는 것을 검증함.",
+      "한국 주식/ETF 검색이 종목명과 6자리 종목코드 모두를 대상으로 autocomplete 후보를 반환하는 것을 검증함.",
+      "KRX CSV parser가 BOM/공백 헤더, HTML 오류 페이지, LOGOUT 응답을 방어하는 것을 검증함."
+    ],
+    "risks": [
+      "grid 색상은 아직 인라인 stroke 값이므로 향후 다크 모드나 테마 기능에서는 CSS 토큰화가 필요할 수 있음.",
+      "실제 KRX 공개 응답 스키마가 알려진 컬럼명 집합 밖으로 바뀌면 추가 alias 보강이 필요할 수 있음."
+    ],
+    "future_improvements": [
+      "별도 테마 기능에서 chart grid, 캔들 색상, 거래량 막대, 축 라벨 색상을 App.css 디자인 토큰으로 일괄 추출.",
+      "한국 종목 검색의 초성 검색이나 고급 랭킹은 별도 feature로 분리 검토."
+    ],
+    "decisions": [
+      "02_dev에서 추가된 테스트가 grid, 한국 autocomplete, KRX parser, SVG remount 후 wheel/minimap 복구를 커버하므로 05_verify에서 새 테스트는 추가하지 않음.",
+      "하네스 config의 고정 검증 명령 외 추가 필수 검증 명령은 없어 test_commands는 빈 배열로 기록함.",
+      "03_review의 optional NIT는 기능 요구 범위 밖이고 기존 테스트 기대값 변경을 동반하므로 04_fix의 보류 판단을 수용함.",
+      "작업트리에 검증 시작 전부터 존재한 unrelated .ai 변경은 사용자/하네스 변경으로 보고 수정하지 않음."
+    ],
+    "unresolved_items": []
+  }
+}

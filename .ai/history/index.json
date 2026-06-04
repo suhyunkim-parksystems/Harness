@@ -1,0 +1,202 @@
+{
+    "schema_version": 1,
+    "features": [
+        {
+            "schema_version": 1,
+            "event_id": "20260605002546-04-project-chart-compare-with-benchmark-full",
+            "feature": "04-project-chart-compare-with-benchmark",
+            "pipeline": "full",
+            "status": "complete",
+            "created_at": "2026-06-05T00:25:46",
+            "completed_at": "2026-06-05T01:21:09",
+            "request_summary": "차트만 덩그러니 있어서 뭐가 뭔지 잘 모르겠네. GRID를 추가해줘. 그리고 한국주식 종목 검색에 뭔가 문제가있는거같아. 자동완성이 안되고 검색 결과도 안나와 그거 같이 디버깅하고, 현재 종목 검색해서 검새 하자마자는 미니맵/확대/축소 다 잘 나오는데, 현재뷰를 예를들어 1M ->3Y이렇게 바꾸면 그건 확대/축소/미니맵 이벤트가 안생겨. 이것도 디버깅해줘",
+            "verification": "PASS",
+            "verification_source": ".ai/runs/04-project-chart-compare-with-benchmark/verification/latest.json",
+            "risk_level": "low",
+            "feature_dir": ".ai/features/04-project-chart-compare-with-benchmark",
+            "run_dir": ".ai/runs/04-project-chart-compare-with-benchmark",
+            "doc": ".ai/docs/04-project-chart-compare-with-benchmark_명세서.docx",
+            "commits": {
+                "00_specify": "e0848aaa1f97a6913e79313c33836ee1ec8ac837",
+                "01_plan": "ed8d06bff8aa28d5f602dfa281925b54a79a79ec",
+                "02_develop": "8272c3055e12e280c239f49568c3903e253a671b",
+                "03_review": "67a34b8dab9bd6e53f2efea5bb039c5eb7652661",
+                "04_fix": "ab506f23fcad3b3b771a2ee9e6e8002686a8731a",
+                "05_verify": "8015a08640538df063bc77dbbd81ff35d7ad2b79",
+                "06_document": "697f8665c7b0c2fbf0fb6a701cef37416c3745cb"
+            },
+            "implemented": [
+                "차트 GRID 추가, 한국주식 자동완성/검색 디버깅, 기간 변경 후 확대/축소/미니맵 이벤트 복구 범위를 개발 가능한 스펙으로 확정했다.",
+                "차트 세로 grid선 및 거래량 baseline/보조 grid선 추가 계획 설계",
+                "SVG 재마운트 시 Callback Ref 기반 wheel 리스너 복구 계획 수립",
+                "한국 카테고리 검색 시 종목명과 종목코드 동시 매칭 및 중복 필터링 계획 설계",
+                "KRX CSV 헤더 BOM/공백 정규화 파싱 설계",
+                "StockChart에 세로 날짜 grid선과 거래량 영역 상/중/하 기준선을 저대비 색상으로 추가하고, 날짜 라벨과 세로선이 sampleIndices로 같은 위치를 공유하도록 함.",
+                "sampleIndices를 chartHelpers.ts로 이관·export하고 total<=0 / count<=1 엣지 케이스를 보강.",
+                "wheel listener를 callback ref(setSvgRef) + svgNode state + [svgNode] effect 구조로 전환해, 기간 변경 로딩 분기에서 SVG가 재마운트돼도 확대/축소·미니맵 이벤트가 끊기지 않게 복구."
+            ],
+            "important_followups": [
+                "벤치마크 지수 또는 비교 종목과의 상대 수익률 차트는 별도 기능으로 다룬다.",
+                "초성 검색, 오타 보정, 검색 랭킹 고도화는 이번 수정 이후 별도 개선으로 검토한다.",
+                "다양한 브라우저 환경에서의 wheel passive 이벤트 지원 범용성 보완",
+                "검색 성능 극대화를 위한 서버 사이드 캐싱 전략 추가",
+                "grid 스타일을 App.css/디자인 토큰으로 분리해 테마와 연동."
+            ],
+            "important_decisions": [
+                "feature_name_locked 정책에 따라 기능명은 04-project-chart-compare-with-benchmark로 유지했다.",
+                "Grid는 가격 수평선, 날짜 세로 기준선, 거래량 보조선을 포함하는 것으로 기본 결정했다.",
+                "한국 종목 검색은 한글 종목명과 6자리 종목코드를 모두 지원하는 것으로 기본 결정했다.",
+                "기간 변경 시 zoom/pan 상태는 전체 범위로 초기화하고, 이후 새 데이터 기준으로 wheel/drag 이벤트가 다시 동작해야 한다.",
+                "새 차트 라이브러리나 외부 의존성은 도입하지 않는 것으로 기본 결정했다."
+            ]
+        },
+        {
+            "schema_version": 1,
+            "event_id": "20260604232227-03-project-chart-event-full",
+            "feature": "03-project-chart-event",
+            "pipeline": "full",
+            "status": "complete",
+            "created_at": "2026-06-04T23:22:27",
+            "completed_at": "2026-06-05T00:20:53",
+            "request_summary": "차트는 기본적으로 1M,3M,6M,1Y,3Y,5Y,10Y,YTD 를 선택하면 그 기간만 보여줘야해. 기본은 1M로. 차트에서 확대 축소를 해서 더 자세하게 볼 수 있는 기능을 만들고싶어. 그리고 확대했을경우, 내가 전체 차트에 어디쯤인지 잘 모르니까, 마우스 클릭하고 마우스를 움직이면 이동하는 이벤트와 미니맵을 우하단에 표시하여 UX를 개선시켜줘.",
+            "verification": "PASS",
+            "verification_source": ".ai/runs/03-project-chart-event/verification/latest.json",
+            "risk_level": "low",
+            "feature_dir": ".ai/features/03-project-chart-event",
+            "run_dir": ".ai/runs/03-project-chart-event",
+            "doc": ".ai/docs/03-project-chart-event_명세서.docx",
+            "commits": {
+                "00_specify": "1d5509a13bb95bf6609e6225f222cc51ea2e2761",
+                "01_plan": "801d18480eda78bb6b57ecc2a362abea887e48de",
+                "02_develop": "2a00545bb85b0476cb6d79ba52647ab1ce92e4e9",
+                "03_review": "ce2d7595c1c540841251883a7dbc4f16254fd672",
+                "04_fix": "c14ec78e8b339b06a5b52a3a1c460f50646bfe84",
+                "05_verify": "d52fd4584c2b4a1c86a5ccd984bf1a51d90cd279",
+                "06_document": "bb1eaf98400af713e297939ae0e00d865b518657"
+            },
+            "implemented": [
+                "03-project-chart-event 00_spec.md 스펙 산출물을 작성했다.",
+                "하네스용 00_spec.result.json 결과 파일을 작성했다.",
+                "기간 선택 확장, 확대/축소, 드래그 이동, 미니맵 UX 요구사항과 검증 기준을 개발 가능한 수준으로 정리했다.",
+                "백엔드 ChartPeriod에 3y, 5y, 10y, ytd 추가 및 Yahoo Finance 매핑",
+                "프론트엔드 ChartPeriod 타입 확장",
+                "chartHelpers.ts 순수 함수 서비스 모듈 생성 (clampRange, computeZoomRange, computePanRange, formatDateLabel, buildMinimapPath)",
+                "StockChart 8개 기간 버튼 확장",
+                "view null sentinel 패턴으로 zoom 상태 관리"
+            ],
+            "important_followups": [
+                "사용자 지정 시작일/종료일 조회를 별도 기능으로 확장할 수 있다.",
+                "기술적 분석 지표, 크로스헤어, 툴팁, 이동평균선은 차트 탐색 UX 안정화 이후 별도 단계에서 검토한다.",
+                "모바일 pinch zoom과 미니맵 직접 조작은 필요성이 확인되면 후속 기능으로 확장한다.",
+                "미니맵 오버레이 자체를 드래그하여 차트를 스크롤하는 기능 추가",
+                "10Y 전체 뷰에서 캔버스 기반 렌더링 또는 데이터 샘플링 적용"
+            ],
+            "important_decisions": [
+                "feature_name_locked가 true이므로 기능명은 03-project-chart-event 그대로 유지했다.",
+                "기간 API 값은 기존 관례를 따라 1m, 3m, 6m, 1y, 3y, 5y, 10y, ytd로 정했다.",
+                "기본 기간은 초기 UI와 API period 생략 모두 1m로 정했다.",
+                "새 외부 차트 라이브러리 없이 기존 순수 SVG StockChart를 확장하는 방향을 기본값으로 정했다.",
+                "장기 기간도 확대 시 세부 확인이 가능하도록 기본 interval은 1d로 정했다."
+            ]
+        },
+        {
+            "schema_version": 1,
+            "event_id": "20260604221256-02-project-search-tab-full",
+            "feature": "02-project-search-tab",
+            "pipeline": "full",
+            "status": "complete",
+            "created_at": "2026-06-04T22:12:56",
+            "completed_at": "2026-06-04T23:16:40",
+            "request_summary": "주식 종목을 검색해서 그 종목의 상세정보 (종가, 시가 등등 엄청 많은 정보들이 있을거야. 특히 차트기능은 꼭)를 보여주는 Tab을 만들어줘. 기존의 대시보드는 첫번째 메인탭으로 가져가고 지금 검색기능 이걸 두번째 탭으로 두면되. 여기서 중요한건, 가장 최신 종목이 항상 반영되어야하며, 미리 캐시해 둘 필요가 있다면 그렇게 하도록해. 또한 한국주식/한국ETF/미국주식/미국ETF 이 4개에 대해서만 검색을 할건데, 미국 종목의 경우 티커를 기반으로한 검색을 해야하고 한국주식의 경우 이름을 기반으로한 검색을 해야해. 또한 검색의 편의성을 위해 자동완성 기능은 매우 필수야.",
+            "verification": "PASS",
+            "verification_source": ".ai/runs/02-project-search-tab/verification/latest.json",
+            "risk_level": "low",
+            "feature_dir": ".ai/features/02-project-search-tab",
+            "run_dir": ".ai/runs/02-project-search-tab",
+            "doc": ".ai/docs/02-project-search-tab_명세서.docx",
+            "commits": {
+                "00_specify": "c17873f811e427e4483a6781b1654452777fd372",
+                "01_plan": "948896725470b2ead317a75caa23a9756d1beb4d",
+                "02_develop": "59d4965224dec75df8bde4aaf01b502b782e3b0f",
+                "03_review": "8a365deac2af346af29d1a2fb22283a4d3995aa5",
+                "04_fix": "75acd85c6cba72358e2c2326ebb797975f97e1e8",
+                "05_verify": "63a70a5f73f6027371b401388af1c3078f1e509d",
+                "06_document": "de9fe7ffd68eba1401c29c491bbce2d873841c74"
+            },
+            "implemented": [
+                "기존 대시보드를 첫 번째 탭으로 유지하고 두 번째 탭에 종목 검색/자동완성/상세/차트를 추가하는 기능 스펙을 확정했다.",
+                "검색 범위를 한국주식, 한국ETF, 미국주식, 미국ETF로 제한하고 미국은 티커 기반, 한국은 이름 기반 검색으로 명시했다.",
+                "최신 종목 반영을 위한 종목 마스터 캐시와 상세/차트 stale cache 정책을 스펙에 포함했다.",
+                "한국/미국 주식 및 ETF 검색 자동완성, 상세 시세 및 일봉 차트 구현을 위한 설계 수립",
+                "KRX Data Marketplace provider (OTP+CSV, EUC-KR decode, LOGOUT guard)",
+                "NASDAQ Symbol Directory provider (nasdaqlisted.txt + otherlisted.txt pipe parsing)",
+                "Yahoo Finance chart API provider (OHLCV parsing, .KS/.KQ suffix, BRK.B→BRK-B normalization)",
+                "SearchService with prefix-first ranking, 24h master cache, 60s quote cache, stale fallback"
+            ],
+            "important_followups": [
+                "관심종목 저장, 실시간 스트리밍, 호가/주문 기능은 후속 기능으로 분리한다.",
+                "영구 저장소 기반 종목 마스터 캐시는 provider 제한이나 성능 문제가 확인된 뒤 별도 단계에서 검토한다.",
+                "인메모리 캐시 외에 SQLite나 Redis 같은 로컬/인프라 영구 저장소 도입 검토",
+                "다양한 주기(분봉, 주봉) 및 기술적 지표 기능 확장",
+                "Add mouseover tooltips to SVG chart"
+            ],
+            "important_decisions": [
+                "defaults_mode에 따라 질문 없이 권장 기본값으로 스펙을 확정했다.",
+                "자동완성은 입력 2자 이상, 최대 10개 후보, 디바운스 적용을 기본값으로 정했다.",
+                "차트는 필수 범위로 포함하되 구현 방식은 다음 계획 단계에서 의존성 추가 여부와 함께 확정하도록 했다.",
+                "캐시는 기존 MemoryCache 재사용을 기본값으로 두고, provider 실패 시 stale 상태 반환을 요구사항으로 명시했다.",
+                "외부 금융 데이터와 차트 의존성 가능성 때문에 risk_level을 high로 판단하고 human_gate_required를 true로 유지했다."
+            ]
+        },
+        {
+            "schema_version": 1,
+            "event_id": "20260604211043-01-project-init-full",
+            "feature": "01-project-init",
+            "pipeline": "full",
+            "status": "complete",
+            "created_at": "2026-06-04T21:10:43",
+            "completed_at": "2026-06-04T22:06:03",
+            "request_summary": "주식 대시보드를 만들어줘. 이 대시보드는 미국 대표지수, 한국 대표지수, 그외 기타국 대표지수, 환율정보가 전부 한눈에 보여야해. 데이터는 전부 실시간 데이터로 받아오는것으로 하고, 화면은 React로 구성, 백엔드는 FastAPI로 구성해야해. 난 무조건적으로 무료 API를 이용해야해. 과금은 하고싶지않아. 반드시 테스트 코드 or 테스트 프로젝트는 모두 필요해. src 디렉토리 바로 아래 backend와 frontend를 한번에 켤 수 있는 배치파일을 만들어줘. 내 운영체제를 고려해서 해야하고, 혹시 백그라운드로 실행되고있을 경우를 위해 끄는 명령어 배치파일도 같이 만들어줘.",
+            "verification": "PASS",
+            "verification_source": ".ai/runs/01-project-init/verification/latest.json",
+            "risk_level": "low",
+            "feature_dir": ".ai/features/01-project-init",
+            "run_dir": ".ai/runs/01-project-init",
+            "doc": ".ai/docs/01-project-init_명세서.docx",
+            "commits": {
+                "00_specify": "e8b9a32558dcc9423e1bc036d440d76c7d4c24c4",
+                "01_plan": "aeadf4e14dc0214e452a5f35afa17f021b2dc817",
+                "02_develop": "d45eb56a7f02ddc41dd0536e0f8df4c227e964e5",
+                "03_review": "94a42d4dd6023cb4869e93973084e2fbb5743a6d",
+                "04_fix": "8f26aacd3a25f30994fea52461097e9cab9271d4",
+                "05_verify": "355bd6fae561808d9da673adcced726d07414ed0",
+                "06_document": "3c3d741f14edb5cf2569ddafbb14b51d96a35ad9"
+            },
+            "implemented": [
+                "React 프론트엔드와 FastAPI 백엔드 기반 주식/환율 대시보드의 개발 가능 스펙을 확정했다.",
+                "Windows용 시작/종료 배치파일 요구와 테스트 코드 위치 요구를 명시했다.",
+                "무료 데이터 소스 사용 원칙과 무료 API의 지연 가능성 표시 요구를 기록했다.",
+                "프로젝트 초기화 기능(01-project-init)의 구현 계획 수립",
+                "Implemented FastAPI routes, service layer, provider adapters, and TTL cache.",
+                "Normalized Stooq CSV and Frankfurter free API data for index and FX dashboard items.",
+                "Implemented React/Vite/TypeScript dashboard UI with manual and automatic refresh.",
+                "Implemented Windows start/stop batch files with PID and guarded port handling."
+            ],
+            "important_followups": [
+                "구현 단계에서 공급자별 심볼 유효성을 샘플 응답과 mock 테스트로 고정한다.",
+                "무료 API 정책이 바뀔 경우 공급자 어댑터를 추가해 대체 소스를 쉽게 붙일 수 있게 한다.",
+                "추후 사용자 승인 시 관심종목, 포트폴리오, 배포 자동화 기능을 별도 기능으로 확장할 수 있다.",
+                "실시간 WebSocket 스트리밍 지원 검토",
+                "유료 API/환경에서의 인증 토큰 연동 기능 보완"
+            ],
+            "important_decisions": [
+                "하네스가 잠근 feature_name `01-project-init`을 그대로 유지했다.",
+                "질문 없이 defaults_mode에 따라 무료·무인증 데이터 소스를 우선하는 기본안을 선택했다.",
+                "무료 소스 한계 때문에 UI에 데이터 기준 시각과 소스를 반드시 표시하도록 정했다.",
+                "운영체제 조건에 맞춰 실행/종료 스크립트는 Windows `.bat` 파일로 정했다.",
+                "테스트 파일은 프로젝트 계약에 따라 루트 `tests/` 아래에만 두기로 정했다."
+            ]
+        }
+    ],
+    "updated_at": "2026-06-05T01:21:09"
+}

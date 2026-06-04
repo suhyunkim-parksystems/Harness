@@ -1,0 +1,69 @@
+{
+  "status": "PASS",
+  "next_stage": "05_verify",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "low",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_mode_suggestion": "create",
+  "commit_message_suggestion": "02-project-search-tab[20260604-230200][04_fix]",
+  "no_code_changes": false,
+  "changed_files": [
+    "src/backend/app/services/search_service.py",
+    "src/frontend/src/hooks/useStockDetail.ts",
+    "src/frontend/src/components/StockDetailPanel.tsx",
+    "src/frontend/src/components/StockChart.tsx",
+    "src/frontend/src/components/SearchTab.tsx",
+    "tests/backend/test_search_service.py",
+    "tests/frontend/SearchTab.test.tsx"
+  ],
+  "produced_files": [
+    ".ai/features/02-project-search-tab/04_fix.md",
+    ".ai/features/02-project-search-tab/04_fix.result.json"
+  ],
+  "test_commands": [
+    "python -m pytest tests/backend/ -v",
+    "cd src/frontend && npm test -- --run",
+    "cd src/frontend && npm run build"
+  ],
+  "fix_inputs": {
+    "must_fix_addressed": [
+      "SearchService stale fallback when provider returns status=unavailable",
+      "useStockDetail Promise.all -> Promise.allSettled for partial failure isolation"
+    ],
+    "should_consider_addressed": [
+      "StockDetailPanel KRW price formatting (no decimals)",
+      "StockChart Korean candle color scheme (up=red, down=blue)"
+    ],
+    "optional_addressed": [
+      "StockChart PAD_LEFT increased from 56 to 72"
+    ],
+    "rejected": [
+      "SearchService _load_lock per-category split (NIT, minimal benefit vs complexity)"
+    ]
+  },
+  "history_notes": {
+    "implemented": [
+      "search_service.py: get_detail/get_chart now check status=='unavailable' and serve stale cache when available",
+      "useStockDetail.ts: Promise.allSettled replaces Promise.all so chart failure does not block detail panel",
+      "StockDetailPanel.tsx: KRW prices rendered without decimal places",
+      "StockChart.tsx: Korean markets (kr_stock/kr_etf) use red for up, blue for down; PAD_LEFT increased to 72",
+      "SearchTab.tsx: passes category prop to StockChart",
+      "New backend tests for unavailable->stale fallback (detail and chart)",
+      "New frontend tests for KRW formatting and partial failure isolation"
+    ],
+    "risks": [
+      "Unavailable results are no longer cached, meaning every request during an outage hits the provider again - acceptable since outage recovery should be prompt"
+    ],
+    "future_improvements": [
+      "Per-category asyncio locks for parallel preload efficiency",
+      "Chart tooltip on hover (requires external chart library or more complex SVG interaction)"
+    ],
+    "decisions": [
+      "Used Promise.allSettled without adding chartError to StockDetailState - StockChart empty state already handles null chart data adequately",
+      "PAD_LEFT increased to 72 (NIT but co-located with Korean color changes, zero-risk change)"
+    ],
+    "unresolved_items": []
+  }
+}

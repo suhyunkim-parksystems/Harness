@@ -1,0 +1,369 @@
+# Local Harness Prompt
+
+## Harness Context
+- feature_name: 03-project-chart-event
+- pipeline_mode: full
+- stage: 04_fix
+- preferred_model: Claude
+- scheduled_provider: claude
+- performance: medium
+- output_file: .ai/features/03-project-chart-event/04_fix.md
+- result_json_file: .ai/features/03-project-chart-event/04_fix.result.json
+- run_state: .ai/runs/03-project-chart-event/run.json
+- generated_at: 2026-06-04T23:48:53
+- defaults_mode: true
+- interactive_mode: false
+- feature_name_locked: true
+
+## Decision Policy
+Use recommended defaults for ambiguous decisions. Do not return NEEDS_USER unless the task is impossible, unsafe, requires credentials/secrets that are not available, or would perform destructive/non-reversible actions. Record all default decisions and their rationale in the stage output.
+
+## Manual Provider Instructions
+1. The local harness is executing this prompt with the preferred model when possible.
+2. Make the requested file changes directly in the repository.
+3. Write the human-readable stage output file exactly at `.ai/features/03-project-chart-event/04_fix.md`.
+4. Also write the machine-readable stage result JSON exactly at `.ai/features/03-project-chart-event/04_fix.result.json`.
+5. Do not run `git commit`, `git reset`, `git checkout`, `git rebase`, or `git push`. The local harness owns Git history.
+6. This Git ownership rule overrides any preset text that appears to ask the model to create, amend, or push commits.
+7. For every successful stage, leave the working tree commit-ready and record commit intent in the stage output; the harness will create or amend the commit.
+8. If `defaults_mode: true`, prefer recommended defaults over `NEEDS_USER` unless blocked by missing credentials, safety, destructive operations, or impossibility.
+9. If the stage needs user input under the decision policy, write both outputs with `status: NEEDS_USER`.
+10. If the stage fails, write both outputs with `status: FAIL` and a concrete blocking reason.
+11. If `feature_name_locked: true`, keep the existing `feature_name` exactly as provided by the harness. Do not rename or invent a different feature slug.
+12. End with a concise summary; the harness will inspect files, not your final message.
+
+## Machine Result JSON Contract
+The harness reads `.ai/features/03-project-chart-event/04_fix.result.json` first. Keep the `## 단계 결과` section in `.ai/features/03-project-chart-event/04_fix.md` for humans, but write this JSON file for the harness.
+
+Required JSON keys:
+- status: "PASS", "FAIL", "SKIPPED", or "NEEDS_USER"
+- next_stage: next stage id. This is not the final pipeline stage; do not use "done". Use `05_verify` unless the preset explicitly routes to another valid stage.
+- human_gate_required: true or false
+- blocking_reason: string, use "" when there is no blocker
+
+For NEEDS_USER in interactive_mode, also include `questions`: an array of question objects.
+Each question object must include:
+- id: stable snake_case identifier
+- type: "choice", "yes_no", or "text"
+- question: user-facing question text
+- options: for "choice" only, either strings or objects with `id`, `label`, and optional `description`
+- default: optional default option/value
+
+Include any extra stage fields that the preset asks for, such as `risk_level`, `harness_commit_required`, `changed_files`, `verification_summary`, or `fix_inputs`.
+For PASS or FAIL stages, also include `history_notes` with these arrays when known: `implemented`, `risks`, `future_improvements`, `decisions`, and `unresolved_items`. Use empty arrays for categories with nothing to record. Prefer Korean text for human-facing titles, descriptions, reasons, risks, and decisions when the project context is Korean.
+
+## Project Contract
+Source: .ai/project_contract.md
+
+# Project Contract
+
+## Hard Rules
+- 모델은 Git commit, amend, reset, checkout, rebase, push를 직접 실행하지 않는다.
+- 기존 테스트를 삭제하거나 비활성화하지 않는다.
+- 요청 범위를 벗어난 리팩터링, 의존성 추가, 파일 이동은 하지 않는다.
+- 기존 코드와의 하위 호환성을 우선한다. 공개 API, 함수 시그니처, 데이터 포맷, 설정 키, 파일 경로, CLI 사용법, 기존 테스트 기대값을 깨뜨리는 변경은 명시적으로 기록하고 사용자 승인을 받는다.
+
+## Project Layout
+- 프로덕션 코드는 루트 `src/` 하위에 둔다.
+- 테스트 코드는 루트 `tests/` 하위에 둔다.
+- 새 테스트 파일을 `src/` 하위에 만들지 않는다.
+
+## Code Style
+- 새 코드는 같은 디렉터리의 기존 패턴, 네이밍, 파일 구조를 우선 따른다.
+- 프로젝트에 이미 명확한 네이밍 관례가 없으면 변수와 함수는 camelCase를 기본으로 한다.
+- 함수 이름은 가능하면 동사 또는 동사구로 시작한다. 예: `loadConfig`, `validateInput`, `renderItem`.
+- Boolean 값과 Boolean 반환 함수는 `is`, `has`, `can`, `should` 같은 의미 있는 접두사를 사용한다.
+- 이벤트 핸들러는 `handle` 또는 기존 프로젝트의 이벤트 네이밍 패턴을 따른다.
+- 값을 변환하는 함수는 `to`, `from`, `parse`, `format`, `normalize`처럼 변환 의도가 드러나는 이름을 사용한다.
+- 데이터를 가져오는 함수는 `get`, `load`, `fetch`, `read` 중 실제 동작에 맞는 동사를 사용한다.
+- 부수효과가 있는 함수는 `save`, `write`, `update`, `delete`, `send`, `create`처럼 변경 의도가 드러나는 동사를 사용한다.
+- 구현이 30줄을 넘어가면 함수나 작은 단위로 분리한다.
+- 서비스레이어를 두어서 유지보수를 좋게하라.
+
+## Reliability
+- 외부 입력, 파일, 네트워크, 프로세스 실행 결과는 실패 가능성을 명시적으로 처리한다.
+- 외부 연동 실패는 호출 단위로 격리하고, 가능한 경우 부분 실패 상태로 응답해 전체 기능 중단을 피한다.
+- 외부 데이터 조회는 캐시나 대체 경로를 활용해 일시적 실패에도 가능한 범위의 응답을 유지한다.
+- 자동화 스크립트는 백그라운드 프로세스 종료 시 실행 시점에 기록한 PID를 우선 사용한다.
+
+## Testing
+- 테스트는 외부 네트워크에 의존하지 않으며, 외부 HTTP 호출은 Mock 또는 Fixture로 격리한다.
+
+
+## Original User Request
+차트는 기본적으로 1M,3M,6M,1Y,3Y,5Y,10Y,YTD 를 선택하면 그 기간만 보여줘야해. 기본은 1M로. 차트에서 확대 축소를 해서 더 자세하게 볼 수 있는 기능을 만들고싶어. 그리고 확대했을경우, 내가 전체 차트에 어디쯤인지 잘 모르니까, 마우스 클릭하고 마우스를 움직이면 이동하는 이벤트와 미니맵을 우하단에 표시하여 UX를 개선시켜줘.
+
+## Previous Stage Outputs
+- .ai/features/03-project-chart-event/00_spec.md
+- .ai/features/03-project-chart-event/00_spec.result.json
+- .ai/features/03-project-chart-event/01_plan.md
+- .ai/features/03-project-chart-event/01_plan.result.json
+- .ai/features/03-project-chart-event/02_dev.md
+- .ai/features/03-project-chart-event/02_dev.result.json
+- .ai/features/03-project-chart-event/03_review.md
+- .ai/features/03-project-chart-event/03_review.result.json
+
+## Additional Stage Inputs
+- none
+
+## Retry Context
+- none
+
+## Interactive Answer History
+- none
+
+## Current Git Hints
+- current_head: ce2d7595c1c540841251883a7dbc4f16254fd672
+- changed_paths_excluding_runs: []
+- latest_harness_verification: none
+
+---
+
+---
+stage: "04_fix"
+role: "review_fix"
+preferred_model: "Claude"
+model_policy: "preferred_not_hard_block"
+required_inputs:
+  - ".ai/features/03-project-chart-event/00_spec.md"
+  - ".ai/features/03-project-chart-event/01_plan.md"
+  - ".ai/features/03-project-chart-event/02_dev.md"
+  - ".ai/features/03-project-chart-event/03_review.md"
+optional_inputs:
+  - ".ai/features/03-project-chart-event/05_verify.md"
+  - ".ai/runs/03-project-chart-event/verification/latest.json"
+outputs:
+  - ".ai/features/03-project-chart-event/04_fix.md"
+allowed_writes:
+  - "production_code"
+  - "tests"
+  - ".ai/features/03-project-chart-event/04_fix.md"
+forbidden_writes:
+  - ".ai/features/03-project-chart-event/00_spec.md"
+  - ".ai/features/03-project-chart-event/01_plan.md"
+  - ".ai/features/03-project-chart-event/02_dev.md"
+  - ".ai/features/03-project-chart-event/03_review.md"
+  - ".ai/features/03-project-chart-event/05_verify.md"
+human_gate_required: false
+commit_policy: "commit_on_pass"
+retry_commit_policy: "amend_existing_stage_04"
+commit_owner: "harness"
+default_next_stage: "05_verify"
+---
+
+# 개선 프리셋 (4단계)
+
+## 경로 원칙
+
+- 프로덕션 코드는 루트 `src/` 하위 파일만 의미한다.
+- 테스트 코드는 루트 `tests/` 하위 파일만 의미한다.
+- 새 테스트 파일은 `tests/` 하위에만 만든다. `src/` 하위에 테스트 파일을 만들지 않는다.
+- `requirements.txt`, `run.ps1`, 설정 파일, 의존성 파일, 실행 스크립트 같은 보조 파일도 루트에 만들지 않는다. 필요하면 반드시 `src/` 또는 `tests/` 하위에 둔다.
+- `vendor/`, `packages/`, `dist/`, `build/` 등 외부/생성 산출물 디렉터리는 계획/수정/검증 대상에서 제외하고, 필요하면 생성물 또는 외부 산출물로만 기록한다.
+
+## 실행 정책
+
+- 권장 담당 모델은 Claude이다.
+- 다른 모델이 이 단계를 실행하더라도 중지하지 않는다.
+- 담당 모델이 권장 모델과 다르면 `04_fix.md`의 `## 단계 결과`에 `model_mismatch: true`와 실제 실행 모델을 기록한다.
+- 이 단계는 3단계 리뷰 지적과, 존재하는 경우 5단계 검증 실패 항목을 반영해 코드를 개선하는 단계이다.
+- 5단계가 하네스 검증 명령 실패로 되돌아온 경우 `.ai/runs/03-project-chart-event/verification/latest.json`을 반드시 읽고, 실패한 명령의 stdout/stderr 경로와 returncode를 수정 근거로 사용한다.
+
+---
+
+## 역할
+
+너는 이 프로젝트의 코드 개선 담당이다.
+2단계 구현 기록, 3단계 리뷰, 필요 시 5단계 검증 실패 기록을 함께 읽고 각 지적 사항에 대해 수용 여부를 판단하여 코드를 개선한다.
+
+---
+
+## 작업 순서
+
+1. 요청사항이 개선 불가능할 정도로 모호한 경우에만 `status: NEEDS_USER`로 멈춘다.
+2. `.ai/features/03-project-chart-event/00_spec.md`의 목표, 범위, 요구사항, 위험도를 파악한다.
+3. `.ai/features/03-project-chart-event/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 위험 구간, 의존성, 테스트 전략을 파악한다.
+4. `.ai/features/03-project-chart-event/02_dev.md`를 읽고 원래 구현 의도와 Git 정보를 확인한다.
+5. `.ai/features/03-project-chart-event/03_review.md`를 읽고 리뷰 내용을 확인한다.
+6. `.ai/features/03-project-chart-event/05_verify.md`가 존재하고 최종 판정이 `FAIL`이면, 실패 항목과 `fix_inputs`를 03_review 이후의 추가 지적 사항으로 취급하여 우선 처리한다.
+7. `.ai/runs/03-project-chart-event/verification/latest.json`이 존재하면 하네스 검증 결과를 읽는다. `status: FAIL`이거나 `failed_commands`가 비어 있지 않으면 `05_verify.md`의 모델 판정보다 하네스 검증 결과를 우선한다.
+8. 각 지적 사항을 `수용 / 거부 / 보류 / 사용자 판단 요청`으로 분류한다.
+9. 수용한 항목에 대해 코드를 수정한다.
+10. 리뷰 또는 검증에서 누락 테스트를 지적했다면 루트 `tests/` 하위에 테스트를 추가한다.
+11. 05_verify에서 추가한 테스트 파일이 있으면 삭제하지 말고 유지한다.
+12. 가능한 테스트를 실행하고 결과를 기록한다.
+13. 결과를 `.ai/features/03-project-chart-event/04_fix.md`에 작성한다.
+14. 최초 04_fix 실행이면 코드 변경이 없더라도 리뷰 처리 기록과 `04_fix.md`를 포함하여 하네스가 `04_fix` stage 커밋을 만들 수 있게 워킹트리를 커밋 가능한 상태로 남긴다. 추천 커밋 메시지는 `03-project-chart-event[YYYYMMDD-hhmmss][04_fix]` 포맷을 사용한다.
+15. 05_verify 실패 후 재진입한 04_fix이면 하네스가 기존 04_fix 커밋을 amend할 수 있게 변경을 남기고 `commit_mode_suggestion: amend_existing_04`를 기록한다.
+16. 수용한 코드 변경이 없거나 모든 항목을 거부/보류하여 프로덕션 코드 변경이 없으면 `no_code_changes: true`를 기록한다.
+17. `git commit`, `git commit --amend`, `git reset`, `git checkout`, `git rebase`, `git push`를 실행하지 않는다. 실제 커밋 또는 amend는 하네스가 처리한다.
+18. 커밋 가능한 상태를 만들 수 없으면 이유를 기록하고 `status: FAIL` 또는 `status: NEEDS_USER`로 멈춘다.
+19. 이 단계 산출물 안에 커밋 SHA를 기록하려고 하지 않는다. 커밋 SHA는 하네스가 커밋한 뒤에 생기므로 이 단계 산출물에는 정확히 적을 수 없다.
+
+---
+
+## 판단 기준
+
+### 수용
+
+- 지적이 명확히 타당하고 실제 버그, 보안, 에러 핸들링 문제가 존재하는 경우
+- 구조 개선 지적이 기존 코드베이스의 일관성에 부합하는 경우
+- 누락된 테스트 케이스가 실제로 필요한 경우
+- 05_verify에서 실패한 테스트가 실제 결함을 드러내는 경우
+
+### 거부
+
+- 지적이 현재 기능 범위에서 불필요한 과도한 설계인 경우
+- 01_plan.md에 사전 합의된 설계 결정에 대한 지적이며 그 결정이 여전히 유효한 경우
+- 02_dev.md에 이미 명시한 의도적 결정에 대한 지적이며 그 결정이 여전히 유효한 경우
+- 수정 시 다른 기능에 사이드이펙트를 일으킬 수 있는 경우
+
+### 보류
+
+- 지적은 타당하지만 현재 스펙 범위를 넘어서 별도 기능으로 분리해야 하는 경우
+- 위험도가 높아 별도 계획과 사용자 승인이 필요한 경우
+
+### 사용자에게 묻기
+
+- 수용과 거부 어느 쪽도 명확하지 않은 경우
+- 설계 방향의 선택이 필요한 경우
+- 현재는 괜찮지만 추후 문제가 될 수 있다는 류의 지적인 경우
+- 사용자에게 물을 때는 양쪽 선택지와 각각의 장단점을 함께 제시한다.
+
+---
+
+## 개선 원칙
+
+- 리뷰와 검증 지적 사항의 범위 안에서 수정한다.
+- 이 단계는 `04_fix` stage 커밋을 하네스가 만들 수 있게 준비하는 단계이다.
+- 05_verify 실패 후 재진입한 경우에도 모델은 직접 amend하지 않고, 하네스가 기존 `04_fix` stage 커밋을 갱신할 수 있게 변경을 남긴다.
+- 수용한 항목을 반영할 때 기존 테스트가 깨지지 않는지 확인한다.
+- 수용한 항목을 반영할 때 01_plan.md의 호환성 유지 전략과 기존 공개 인터페이스를 깨지 않는지 확인한다.
+- 리뷰/검증 범위를 넘어 공개 API, 함수 시그니처, 데이터 포맷, 설정 키, 파일 경로, CLI 사용법, 기존 테스트 기대값을 바꿔야 하면 `사용자 판단 요청`으로 멈춘다.
+- 거부한 항목은 이유와 근거를 남긴다.
+- `BLOCKER`와 `MAJOR`는 수용, 거부, 보류 중 하나로 반드시 다룬다.
+- `05_verify.md` 실패 항목이 있으면 리뷰 지적보다 우선한다.
+- 하네스 검증 JSON의 실패 명령은 `05_verify.md`의 모델 판정보다 우선한다.
+- 하네스 검증 JSON에 `stdout` 또는 `stderr` 경로가 있으면 필요한 범위에서 내용을 확인하고 실패 원인 분석에 반영한다.
+- `05_verify.md`가 추가한 테스트 코드는 검증 근거이므로 삭제하지 않는다.
+- 기존 테스트를 삭제하거나 비활성화하지 않는다.
+
+---
+
+## 사용자 판단 요청 형식
+
+```markdown
+## 사용자 판단 요청
+- status: NEEDS_USER
+- 지적 내용 요약:
+- 선택지 A:
+- 선택지 A 장단점:
+- 선택지 B:
+- 선택지 B 장단점:
+- 추천안:
+- 사용자가 답하면 재개할 단계: 04_fix
+```
+
+---
+
+## 기록 양식
+
+개선 완료 후 `.ai/features/03-project-chart-event/04_fix.md`에 아래 형식으로 작성한다.
+
+```markdown
+# 04_fix - 03-project-chart-event
+
+작성: [실제 실행 모델]
+일시: YYYY-MM-DD
+
+## 입력으로 처리한 지적
+- 03_review.md must_fix:
+- 03_review.md should_consider:
+- 05_verify.md 실패 항목:
+- 05_verify.md가 추가한 테스트 파일:
+
+## 수용한 항목
+- 출처: 03_review / 05_verify
+- severity:
+- 지적 내용 요약:
+- 수정한 파일과 변경 내용:
+- 왜 수용했는가:
+
+## 거부한 항목
+- 출처:
+- severity:
+- 지적 내용 요약:
+- 왜 수용하지 않았는가:
+- 거부해도 문제가 없는 근거:
+
+## 보류한 항목
+- 출처:
+- severity:
+- 지적 내용 요약:
+- 보류 사유:
+- 별도 처리 제안:
+
+## 사용자 판단 요청 항목
+- 지적 내용 요약:
+- 선택지 A:
+- 선택지 B:
+- 사용자 결정:
+- 반영 결과:
+
+## 추가 변경 사항
+- 리뷰/검증 반영 과정에서 추가로 수정한 부분
+- 왜 추가 수정이 필요했는가
+
+## 호환성 준수
+- 보존한 기존 인터페이스/데이터 포맷/설정 키:
+- 호환성 유지 전략 반영 내용:
+- breaking change 발생 여부: 없음 / 있음
+- 리뷰/검증 범위를 넘어선 호환성 영향:
+
+## 변경 파일 목록
+- src/path/to/file.py: 변경 내용 요약
+
+## 테스트
+- 실행한 테스트 명령:
+- 결과:
+- 추가한 테스트:
+
+## Git 정보
+- fix_base_commit:
+- harness_commit_required: true
+- commit_created_by_model: false
+- commit_mode_suggestion: create / amend_existing_04
+- commit_message_suggestion: 03-project-chart-event[YYYYMMDD-hhmmss][04_fix]
+- no_code_changes: true / false
+- no_code_changes_reason:
+- pre_commit_diff_command: git diff [fix_base_commit]
+- changed_files:
+- harness_commit_blocking_reason:
+
+## 단계 결과
+- status: PASS / NEEDS_USER / FAIL
+- next_stage: 05_verify
+- human_gate_required: false
+- blocking_reason: 없음
+- risk_level: low / medium / high
+- produced_files:
+  - .ai/features/03-project-chart-event/04_fix.md
+- changed_files:
+- harness_commit_required: true
+- commit_created_by_model: false
+- commit_mode_suggestion: create / amend_existing_04
+- commit_message_suggestion:
+- test_commands:
+- model_mismatch: false
+- actual_model:
+```
+
+---
+
+## 금지 사항
+
+- 리뷰/검증 지적 범위 밖의 코드를 수정하지 않는다.
+- 거부 사유 없이 지적을 무시하지 않는다.
+- 애매한 판단을 사용자에게 묻지 않고 임의로 결정하지 않는다.
+- 기존 테스트를 삭제하거나 비활성화하지 않는다.
+- `git commit`, `git commit --amend`, `git reset`, `git checkout`, `git rebase`, `git push`를 실행하지 않는다.

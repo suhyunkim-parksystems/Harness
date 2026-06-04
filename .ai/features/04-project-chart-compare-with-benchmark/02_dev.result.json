@@ -1,0 +1,60 @@
+{
+  "status": "PASS",
+  "next_stage": "03_review",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "04-project-chart-compare-with-benchmark[20260605-010206][02_develop]",
+  "model_mismatch": false,
+  "actual_model": "claude-opus-4-8",
+  "base_commit": "e0848aaa1f97a6913e79313c33836ee1ec8ac837",
+  "produced_files": [
+    ".ai/features/04-project-chart-compare-with-benchmark/02_dev.md",
+    ".ai/features/04-project-chart-compare-with-benchmark/02_dev.result.json"
+  ],
+  "changed_files": [
+    "src/frontend/src/services/chartHelpers.ts",
+    "src/frontend/src/components/StockChart.tsx",
+    "src/backend/app/providers/krx_provider.py",
+    "src/backend/app/services/search_service.py",
+    "tests/frontend/StockChart.test.tsx",
+    "tests/frontend/SearchTab.test.tsx",
+    "tests/backend/test_krx_provider.py",
+    "tests/backend/test_search_service.py",
+    ".ai/features/04-project-chart-compare-with-benchmark/02_dev.md",
+    ".ai/features/04-project-chart-compare-with-benchmark/02_dev.result.json"
+  ],
+  "test_commands": [
+    "python -m pytest tests/backend/ -q",
+    "cd src/frontend && npm test",
+    "cd src/frontend && npx tsc -b"
+  ],
+  "verification_summary": "백엔드 pytest 61 passed (1 warning), 프론트엔드 vitest 63 passed (4 files), tsc -b 타입 에러 없음. 모든 외부 호출은 mock/fixture로 격리. 기존 테스트는 삭제·비활성화 없이 전부 통과.",
+  "history_notes": {
+    "implemented": [
+      "StockChart에 세로 날짜 grid선과 거래량 영역 상/중/하 기준선을 저대비 색상으로 추가하고, 날짜 라벨과 세로선이 sampleIndices로 같은 위치를 공유하도록 함.",
+      "sampleIndices를 chartHelpers.ts로 이관·export하고 total<=0 / count<=1 엣지 케이스를 보강.",
+      "wheel listener를 callback ref(setSvgRef) + svgNode state + [svgNode] effect 구조로 전환해, 기간 변경 로딩 분기에서 SVG가 재마운트돼도 확대/축소·미니맵 이벤트가 끊기지 않게 복구.",
+      "KRX _parse_master_csv에 선두 BOM 제거 + 행 단위 키/값 정규화(_normalize_row)를 적용해 헤더 BOM/공백으로 마스터가 통째로 비던 파싱 버그를 복구.",
+      "KRX 파서에 HTML/LOGOUT 응답 방어 가드와 경고 로그를 추가.",
+      "SearchService.search에서 한국 카테고리는 종목명+6자리 종목코드를 모두 매칭하고 seen set으로 중복 후보를 제거. 미국은 ticker 매칭 유지.",
+      "_ensure_master_loaded에서 한국 마스터가 비어 로드되면 경고 로그를 남겨 로딩 실패와 정상 0건을 구분."
+    ],
+    "risks": [
+      "grid 색상/간격이 인라인 상수라 테마 변경 시 일관성 관리가 분산될 수 있음(이번 범위 밖).",
+      "KRX 컬럼명은 알려진 후보 집합으로만 매칭하므로 완전히 새로운 헤더 스키마가 오면 후보 추가가 필요함."
+    ],
+    "future_improvements": [
+      "grid 스타일을 App.css/디자인 토큰으로 분리해 테마와 연동.",
+      "한국 종목 검색에 초성 검색·랭킹 고도화(현재 스펙 제외 항목) 검토."
+    ],
+    "decisions": [
+      "거래량 기준선은 상/중/하 3줄로 두되 가운데 선만 더 옅게(#f1f5f9) 처리해 영역 구분은 주되 막대를 가리지 않도록 함.",
+      "기간 변경 race는 기존 useStockDetail의 ignore 플래그 + AbortController로 이미 방어되어 있어 hook은 수정하지 않음.",
+      "base_commit은 01_plan.md 기준점(e0848aa)을 우선 기록(현재 HEAD는 ed8d06b)."
+    ],
+    "unresolved_items": []
+  }
+}

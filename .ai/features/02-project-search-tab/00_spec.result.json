@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "next_stage": "01_plan",
+  "human_gate_required": true,
+  "blocking_reason": "",
+  "risk_level": "high",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "spec: define project search tab",
+  "model_mismatch": false,
+  "actual_model": "Codex",
+  "produced_files": [
+    ".ai/features/02-project-search-tab/00_spec.md",
+    ".ai/features/02-project-search-tab/00_spec.result.json"
+  ],
+  "changed_files": [
+    ".ai/features/02-project-search-tab/00_spec.md",
+    ".ai/features/02-project-search-tab/00_spec.result.json"
+  ],
+  "verification_summary": "기존 React/FastAPI 구조, 서비스 레이어, MemoryCache, 테스트 패턴을 확인한 뒤 스펙 산출물만 작성했다. 프로덕션 코드와 테스트 코드는 변경하지 않았다.",
+  "history_notes": {
+    "implemented": [
+      "기존 대시보드를 첫 번째 탭으로 유지하고 두 번째 탭에 종목 검색/자동완성/상세/차트를 추가하는 기능 스펙을 확정했다.",
+      "검색 범위를 한국주식, 한국ETF, 미국주식, 미국ETF로 제한하고 미국은 티커 기반, 한국은 이름 기반 검색으로 명시했다.",
+      "최신 종목 반영을 위한 종목 마스터 캐시와 상세/차트 stale cache 정책을 스펙에 포함했다."
+    ],
+    "risks": [
+      "금융 데이터 provider 선택과 한국 ETF/미국 ETF 커버리지에 따라 구현 난도가 달라질 수 있다.",
+      "차트 라이브러리나 별도 데이터 provider가 필요할 경우 새 외부 의존성 추가 승인이 필요할 수 있다.",
+      "현재 앱 일부 한글 텍스트가 깨져 보여 새 UI 작성 시 인코딩 검증이 필요하다."
+    ],
+    "future_improvements": [
+      "관심종목 저장, 실시간 스트리밍, 호가/주문 기능은 후속 기능으로 분리한다.",
+      "영구 저장소 기반 종목 마스터 캐시는 provider 제한이나 성능 문제가 확인된 뒤 별도 단계에서 검토한다."
+    ],
+    "decisions": [
+      "defaults_mode에 따라 질문 없이 권장 기본값으로 스펙을 확정했다.",
+      "자동완성은 입력 2자 이상, 최대 10개 후보, 디바운스 적용을 기본값으로 정했다.",
+      "차트는 필수 범위로 포함하되 구현 방식은 다음 계획 단계에서 의존성 추가 여부와 함께 확정하도록 했다.",
+      "캐시는 기존 MemoryCache 재사용을 기본값으로 두고, provider 실패 시 stale 상태 반환을 요구사항으로 명시했다.",
+      "외부 금융 데이터와 차트 의존성 가능성 때문에 risk_level을 high로 판단하고 human_gate_required를 true로 유지했다."
+    ],
+    "unresolved_items": []
+  }
+}

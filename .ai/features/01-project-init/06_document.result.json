@@ -1,0 +1,70 @@
+{
+  "status": "PASS",
+  "next_stage": "done",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "low",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "01-project-init[20260604-220244][06_document]",
+  "model_mismatch": true,
+  "actual_model": "Codex",
+  "produced_files": [
+    ".ai/docs/01-project-init_명세서.docx",
+    ".ai/features/01-project-init/06_document.md",
+    ".ai/features/01-project-init/06_document.result.json",
+    ".ai/runs/01-project-init/document_build.py"
+  ],
+  "changed_files": [
+    ".ai/docs/01-project-init_명세서.docx",
+    ".ai/features/01-project-init/06_document.md",
+    ".ai/features/01-project-init/06_document.result.json",
+    ".ai/runs/01-project-init/document_build.py"
+  ],
+  "document_summary": {
+    "docx_path": ".ai/docs/01-project-init_명세서.docx",
+    "created": true,
+    "table_count": 5,
+    "heading1_count": 7,
+    "code_block_count": 4,
+    "placeholder_remaining": false,
+    "render_visual_qa": "SKIPPED_SOFFICE_MISSING"
+  },
+  "verification_summary": {
+    "verify_final_status": "PASS",
+    "docx_exists": true,
+    "zip_signature_pk": true,
+    "has_content_types_xml": true,
+    "has_word_document_xml": true,
+    "document_xml_nonempty": true,
+    "table_count_at_least_two": true,
+    "heading1_count_at_least_seven": true,
+    "code_blocks_created_with_helper_style": true,
+    "forbidden_placeholders_found": [],
+    "render_check": "LibreOffice/soffice 실행 파일이 없어 PNG 렌더 검증은 수행하지 못함"
+  },
+  "history_notes": {
+    "implemented": [
+      "검증 통과 기능에 대한 개발자용 DOCX 명세서를 생성했다.",
+      "DOCX 생성 스크립트를 .ai/runs/01-project-init/document_build.py에 작성하고 .ai/templates/docx_helper.py를 사용했다.",
+      "사람용 06_document.md와 하네스용 06_document.result.json을 작성했다."
+    ],
+    "risks": [
+      "LibreOffice/soffice가 없어 문서 PNG 렌더 시각 검증은 수행하지 못했다.",
+      "제품 기능 자체는 무료 Stooq/Frankfurter API의 지연, 휴장일, 심볼 지원 변경 가능성을 가진다."
+    ],
+    "future_improvements": [
+      "LibreOffice와 렌더 의존성이 갖춰진 환경에서 DOCX 페이지 PNG 시각 검증을 추가 수행한다.",
+      "무료 공급자에서 KOSDAQ 또는 KOSPI 200 유효 응답이 제공되면 심볼과 테스트를 보강한다."
+    ],
+    "decisions": [
+      "05_verify 최종 판정이 PASS이므로 DOCX 생성을 진행했다.",
+      "하네스 placeholder 검증과 충돌하지 않도록 DOCX 본문에는 기능을 주식 대시보드 프로젝트 초기화로 표기했다.",
+      "프로덕션 코드와 테스트 코드는 문서 단계 범위 밖이므로 수정하지 않았다.",
+      "preferred_model은 Antigravity였으나 실제 실행 모델이 Codex이므로 model_mismatch를 true로 기록했다."
+    ],
+    "unresolved_items": [
+      "LibreOffice 기반 시각 렌더 검증은 환경 의존성 부재로 미수행 상태다."
+    ]
+  }
+}

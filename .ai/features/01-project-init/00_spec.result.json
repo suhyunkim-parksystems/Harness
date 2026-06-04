@@ -1,0 +1,48 @@
+{
+  "status": "PASS",
+  "next_stage": "01_plan",
+  "human_gate_required": true,
+  "blocking_reason": "",
+  "risk_level": "high",
+  "harness_commit_required": true,
+  "changed_files": [
+    ".ai/features/01-project-init/00_spec.md",
+    ".ai/features/01-project-init/00_spec.result.json"
+  ],
+  "produced_files": [
+    ".ai/features/01-project-init/00_spec.md",
+    ".ai/features/01-project-init/00_spec.result.json"
+  ],
+  "verification_summary": "저장소에 기존 src/tests 애플리케이션 구조가 없음을 확인했고, 스펙 산출물과 하네스 결과 JSON을 작성했다. 실제 구현과 테스트 실행은 다음 단계 범위다.",
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "docs: 주식 대시보드 초기 스펙 작성",
+  "model_mismatch": false,
+  "actual_model": "Codex",
+  "history_notes": {
+    "implemented": [
+      "React 프론트엔드와 FastAPI 백엔드 기반 주식/환율 대시보드의 개발 가능 스펙을 확정했다.",
+      "Windows용 시작/종료 배치파일 요구와 테스트 코드 위치 요구를 명시했다.",
+      "무료 데이터 소스 사용 원칙과 무료 API의 지연 가능성 표시 요구를 기록했다."
+    ],
+    "risks": [
+      "무료 API만으로 모든 대표지수의 거래소급 완전 실시간 데이터를 보장하기 어렵다.",
+      "무료 데이터 공급자의 심볼, 응답 형식, 제공 정책이 변경될 수 있다.",
+      "외부 네트워크 실패 또는 특정 지수 미지원 시 부분 데이터만 표시될 수 있다."
+    ],
+    "future_improvements": [
+      "구현 단계에서 공급자별 심볼 유효성을 샘플 응답과 mock 테스트로 고정한다.",
+      "무료 API 정책이 바뀔 경우 공급자 어댑터를 추가해 대체 소스를 쉽게 붙일 수 있게 한다.",
+      "추후 사용자 승인 시 관심종목, 포트폴리오, 배포 자동화 기능을 별도 기능으로 확장할 수 있다."
+    ],
+    "decisions": [
+      "하네스가 잠근 feature_name `01-project-init`을 그대로 유지했다.",
+      "질문 없이 defaults_mode에 따라 무료·무인증 데이터 소스를 우선하는 기본안을 선택했다.",
+      "무료 소스 한계 때문에 UI에 데이터 기준 시각과 소스를 반드시 표시하도록 정했다.",
+      "운영체제 조건에 맞춰 실행/종료 스크립트는 Windows `.bat` 파일로 정했다.",
+      "테스트 파일은 프로젝트 계약에 따라 루트 `tests/` 아래에만 두기로 정했다."
+    ],
+    "unresolved_items": [
+      "KOSDAQ, KOSPI 200 등 일부 한국 지수와 FTSE/Nikkei 등 기타국 지수의 최종 무료 심볼 매핑은 구현 단계에서 공급자 샘플 응답으로 확정해야 한다."
+    ]
+  }
+}

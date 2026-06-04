@@ -1,0 +1,88 @@
+{
+  "status": "PASS",
+  "next_stage": "03_review",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "02-project-search-tab[20260604-225800][02_develop]",
+  "produced_files": [
+    ".ai/features/02-project-search-tab/02_dev.md",
+    ".ai/features/02-project-search-tab/02_dev.result.json"
+  ],
+  "changed_files": [
+    "src/backend/app/models/market.py",
+    "src/backend/app/config.py",
+    "src/backend/app/providers/krx_provider.py",
+    "src/backend/app/providers/nasdaq_provider.py",
+    "src/backend/app/providers/yahoo_finance.py",
+    "src/backend/app/services/search_service.py",
+    "src/backend/app/api/routes.py",
+    "src/backend/app/main.py",
+    "src/frontend/src/types/market.ts",
+    "src/frontend/src/api/markets.ts",
+    "src/frontend/src/hooks/useStockSearch.ts",
+    "src/frontend/src/hooks/useStockDetail.ts",
+    "src/frontend/src/components/DashboardTab.tsx",
+    "src/frontend/src/components/AutocompleteInput.tsx",
+    "src/frontend/src/components/StockDetailPanel.tsx",
+    "src/frontend/src/components/StockChart.tsx",
+    "src/frontend/src/components/SearchTab.tsx",
+    "src/frontend/src/App.tsx",
+    "src/frontend/src/App.css",
+    "tests/backend/test_krx_provider.py",
+    "tests/backend/test_nasdaq_provider.py",
+    "tests/backend/test_yahoo_finance_provider.py",
+    "tests/backend/test_search_service.py",
+    "tests/backend/test_search_routes.py",
+    "tests/frontend/SearchTab.test.tsx"
+  ],
+  "test_commands": [
+    "python -m pytest tests/backend/ -v",
+    "npm test (from src/frontend/)",
+    "npm run build (from src/frontend/)"
+  ],
+  "model_mismatch": false,
+  "actual_model": "Claude Sonnet 4.6",
+  "history_notes": {
+    "implemented": [
+      "KRX Data Marketplace provider (OTP+CSV, EUC-KR decode, LOGOUT guard)",
+      "NASDAQ Symbol Directory provider (nasdaqlisted.txt + otherlisted.txt pipe parsing)",
+      "Yahoo Finance chart API provider (OHLCV parsing, .KS/.KQ suffix, BRK.B→BRK-B normalization)",
+      "SearchService with prefix-first ranking, 24h master cache, 60s quote cache, stale fallback",
+      "FastAPI lifespan preload task for master lists",
+      "3 new API endpoints: /api/search/autocomplete, /api/stocks/{symbol}/detail, /api/stocks/{symbol}/chart",
+      "TypeScript types: SearchCandidate, SearchResponse, StockDetail, ChartBar, ChartResponse",
+      "useStockSearch hook (300ms debounce, AbortController, ignore flag)",
+      "useStockDetail hook (symbol→full fetch, period→chart-only fetch, prevRef pattern)",
+      "DashboardTab extracted from App.tsx with identical behavior",
+      "AutocompleteInput with keyboard navigation (ArrowUp/Down/Enter/Esc)",
+      "StockDetailPanel with OHLC grid, stale/unavailable banners",
+      "StockChart: pure SVG candlestick+volume, 0-divide guard, empty state overlay",
+      "SearchTab: 4-category segmented control, autocomplete, detail+chart layout",
+      "App.tsx: tab navigation (대시보드 / 종목검색)",
+      "64 tests total (46 backend + 18 frontend), all passing",
+      "TypeScript build: 0 errors"
+    ],
+    "risks": [
+      "KRX provider depends on unofficial CSV download; OTP structure may change",
+      "Yahoo Finance is an unofficial API endpoint; may change without notice",
+      "NASDAQ symbol directory only covers major US exchanges; OTC stocks not included",
+      "Korean stock master on weekends/holidays may behave differently (empty response → lazy retry)"
+    ],
+    "future_improvements": [
+      "Add mouseover tooltips to SVG chart",
+      "Consider Recharts/Lightweight Charts for richer chart interactions",
+      "Add persistent DB cache for symbol masters to survive process restart",
+      "Add scheduled symbol master refresh (e.g. daily cron)"
+    ],
+    "decisions": [
+      "SVG 직접 렌더링 채택: 외부 차트 라이브러리 미도입으로 번들 크기/컴파일 위험 제거",
+      "us_stock/us_etf 공동 적재: NASDAQ 파일 이중 다운로드 방지",
+      "빈 마스터 미캐시: provider 실패 시 다음 요청에서 재시도 가능하도록",
+      "단일 useEffect + prevRef 패턴: React exhaustive-deps 위반 없이 symbol 변경과 period 변경 구분"
+    ],
+    "unresolved_items": []
+  }
+}

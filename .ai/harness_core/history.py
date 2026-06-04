@@ -40,7 +40,7 @@ def read_pc_candidates_store(ctx) -> dict[str, Any]:
     if not path.exists():
         return empty_pc_candidates_store(ctx)
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
+        parsed = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         raise HarnessError(f"Invalid PC candidates JSON: {ctx.rel(path)}: {exc}") from exc
     if not isinstance(parsed, dict):
@@ -1010,7 +1010,7 @@ def _pc_candidate_run_window(result: dict[str, Any]) -> tuple[float, float] | No
 
 def _parse_pc_candidate_json_path(ctx, path: Path) -> dict[str, Any]:
     try:
-        output_text = path.read_text(encoding="utf-8")
+        output_text = path.read_text(encoding="utf-8-sig")
     except OSError:
         return {}
     if not output_text.strip():
