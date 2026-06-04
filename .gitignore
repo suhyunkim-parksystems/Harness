@@ -1,0 +1,77 @@
+# Common OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+.antigravitycli/
+.claude/
+.codex/
+*.log
+*.tmp
+*.cache
+log/
+logs/
+tmp/
+temp/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.pytest-tmp/
+.pytest_tmp/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Harness verification scratch
+.ai/runs/.tmp/
+.ai/runs/_pytest_tmp/
+.ai/runs/*/verification/tmp/
+
+# Node / frontend
+node_modules/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+.turbo/
+.parcel-cache/
+coverage/
+dist/
+build/
+
+# .NET / WPF / Visual Studio
+.vs/
+bin/
+obj/
+TestResults/
+.vstest/
+artifacts/
+packages/
+*.suo
+*.user
+*.vsidx
+*.dtbcache.v2
+*.trx
+*.coveragexml
+
+# Java / Gradle / Maven
+.gradle/
+target/
+out/
+
+# Go / vendored generated dependencies
+vendor/
+else/

@@ -1,0 +1,115 @@
+{
+    "providers": {
+        "claude": {
+            "enabled": false
+        },
+        "codex": {
+            "enabled": true
+        },
+        "agy": {
+            "enabled": true
+        }
+    },
+    "model_policy": {
+        "min_distinct_agents": 2,
+        "no_adjacent_same_provider": true,
+        "on_independence_violation": "block",
+        "code_write_allowed": [
+            "claude",
+            "codex"
+        ],
+        "code_write_denied": [
+            "agy"
+        ],
+        "code_write_order": [
+            "claude",
+            "codex"
+        ],
+        "non_code_order": [
+            "agy",
+            "codex",
+            "claude"
+        ],
+        "role_orders": {
+            "plan": [
+                "agy",
+                "codex",
+                "claude"
+            ],
+            "review": [
+                "agy",
+                "codex",
+                "claude"
+            ],
+            "verify": [
+                "codex",
+                "agy",
+                "claude"
+            ],
+            "document": [
+                "agy",
+                "codex",
+                "claude"
+            ],
+            "pc_extract": [
+                "claude",
+                "codex",
+                "agy"
+            ]
+        },
+        "avoid_reusing_recent_code_writer_for_review": true,
+        "reserve_code_writers_for_code_stages": true
+    },
+    "verification": {
+        "enabled": true,
+        "required": true,
+        "timeout_seconds": 600,
+        "commands": [
+            {
+                "name": "harness_python_compile",
+                "command": [
+                    "python",
+                    "-m",
+                    "py_compile",
+                    ".ai\\harness.py",
+                    ".ai\\harness_fast.py",
+                    ".ai\\harness_standard.py",
+                    ".ai\\pc_review.py",
+                    ".ai\\deep_interview.py",
+                    ".ai\\project_planning.py",
+                    ".ai\\templates\\docx_helper.py",
+                    ".ai\\harness_core\\__init__.py",
+                    ".ai\\harness_core\\console.py",
+                    ".ai\\harness_core\\context.py",
+                    ".ai\\harness_core\\errors.py",
+                    ".ai\\harness_core\\process.py",
+                    ".ai\\harness_core\\status.py",
+                    ".ai\\harness_core\\text.py",
+                    ".ai\\harness_core\\questions.py",
+                    ".ai\\harness_core\\frontmatter.py",
+                    ".ai\\harness_core\\deep_thinking.py",
+                    ".ai\\harness_core\\history.py",
+                    ".ai\\harness_core\\json_io.py",
+                    ".ai\\harness_core\\requirements.py",
+                    ".ai\\harness_core\\docx_validation.py",
+                    ".ai\\harness_core\\pipeline.py",
+                    ".ai\\harness_core\\policy.py",
+                    ".ai\\harness_core\\providers.py",
+                    ".ai\\harness_core\\stage_runtime.py",
+                    ".ai\\harness_core\\verification.py",
+                    ".ai\\harness_core\\workflow.py"
+                ]
+            },
+            {
+                "name": "git_diff_check",
+                "command": [
+                    "git",
+                    "-c",
+                    "safe.directory={root}",
+                    "diff",
+                    "--check"
+                ]
+            }
+        ]
+    }
+}
