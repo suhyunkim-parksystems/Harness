@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const backendPort = process.env.BACKEND_PORT ?? "8000";
 const backendTarget = process.env.VITE_API_PROXY_TARGET ?? `http://127.0.0.1:${backendPort}`;
+const frontendHost = process.env.FRONTEND_HOST ?? "0.0.0.0";
 const testSetupFile = fileURLToPath(new URL("../../tests/frontend/setupTests.ts", import.meta.url));
 const modulePath = (path: string) => fileURLToPath(new URL(`node_modules/${path}`, import.meta.url));
 
@@ -25,6 +26,7 @@ export default defineConfig({
     ]
   },
   server: {
+    host: frontendHost,
     port: Number(process.env.FRONTEND_PORT ?? "5173"),
     proxy: {
       "/api": {

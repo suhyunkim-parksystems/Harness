@@ -98,6 +98,21 @@ def test_health_route_returns_provider_configuration():
     assert response.json()["providers"]["stooq"] == "configured"
 
 
+def test_cors_allows_private_network_frontend_origin():
+    client = TestClient(create_app())
+
+    response = client.options(
+        "/api/health",
+        headers={
+            "Origin": "http://192.168.0.25:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://192.168.0.25:5173"
+
+
 def test_market_routes_return_camel_case_payloads(monkeypatch):
     monkeypatch.setattr(routes, "market_service", FakeMarketService())
     client = TestClient(create_app())

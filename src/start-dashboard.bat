@@ -8,6 +8,9 @@ set "RUNTIME_DIR=%SCRIPT_DIR%.dashboard-runtime"
 
 if "%BACKEND_PORT%"=="" set "BACKEND_PORT=8000"
 if "%FRONTEND_PORT%"=="" set "FRONTEND_PORT=5173"
+if "%BACKEND_HOST%"=="" set "BACKEND_HOST=0.0.0.0"
+if "%FRONTEND_HOST%"=="" set "FRONTEND_HOST=0.0.0.0"
+if "%DASHBOARD_ACCESS_HOST%"=="" set "DASHBOARD_ACCESS_HOST=%COMPUTERNAME%"
 
 if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%"
 
@@ -42,17 +45,19 @@ if not exist "%FRONTEND_DIR%\node_modules" (
   if not "!NPM_STATUS!"=="0" exit /b 1
 )
 
-echo Starting backend on http://127.0.0.1:%BACKEND_PORT%
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath '%BACKEND_DIR%\.venv\Scripts\python.exe' -ArgumentList @('-m','uvicorn','app.main:app','--host','127.0.0.1','--port','%BACKEND_PORT%') -WorkingDirectory '%BACKEND_DIR%' -WindowStyle Hidden -PassThru -RedirectStandardOutput '%RUNTIME_DIR%\backend.log' -RedirectStandardError '%RUNTIME_DIR%\backend.err'; Set-Content -Path '%RUNTIME_DIR%\backend.pid' -Value $p.Id"
+echo Starting backend on http://%BACKEND_HOST%:%BACKEND_PORT%
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath '%BACKEND_DIR%\.venv\Scripts\python.exe' -ArgumentList @('-m','uvicorn','app.main:app','--host','%BACKEND_HOST%','--port','%BACKEND_PORT%') -WorkingDirectory '%BACKEND_DIR%' -WindowStyle Hidden -PassThru -RedirectStandardOutput '%RUNTIME_DIR%\backend.log' -RedirectStandardError '%RUNTIME_DIR%\backend.err'; Set-Content -Path '%RUNTIME_DIR%\backend.pid' -Value $p.Id"
 if errorlevel 1 exit /b 1
 
-echo Starting frontend on http://127.0.0.1:%FRONTEND_PORT%
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath 'npm.cmd' -ArgumentList @('run','dev','--','--host','127.0.0.1','--port','%FRONTEND_PORT%') -WorkingDirectory '%FRONTEND_DIR%' -WindowStyle Hidden -PassThru -RedirectStandardOutput '%RUNTIME_DIR%\frontend.log' -RedirectStandardError '%RUNTIME_DIR%\frontend.err'; Set-Content -Path '%RUNTIME_DIR%\frontend.pid' -Value $p.Id"
+echo Starting frontend on http://%FRONTEND_HOST%:%FRONTEND_PORT%
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath 'npm.cmd' -ArgumentList @('run','dev','--','--host','%FRONTEND_HOST%','--port','%FRONTEND_PORT%') -WorkingDirectory '%FRONTEND_DIR%' -WindowStyle Hidden -PassThru -RedirectStandardOutput '%RUNTIME_DIR%\frontend.log' -RedirectStandardError '%RUNTIME_DIR%\frontend.err'; Set-Content -Path '%RUNTIME_DIR%\frontend.pid' -Value $p.Id"
 if errorlevel 1 exit /b 1
 
 echo Dashboard started.
-echo Backend:  http://127.0.0.1:%BACKEND_PORT%
-echo Frontend: http://127.0.0.1:%FRONTEND_PORT%
+echo Backend bind:  http://%BACKEND_HOST%:%BACKEND_PORT%
+echo Frontend bind: http://%FRONTEND_HOST%:%FRONTEND_PORT%
+echo This PC:       http://127.0.0.1:%FRONTEND_PORT%
+echo Local network: http://%DASHBOARD_ACCESS_HOST%:%FRONTEND_PORT%
 echo Logs:     %RUNTIME_DIR%
 exit /b 0
 

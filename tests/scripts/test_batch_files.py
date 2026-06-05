@@ -12,9 +12,13 @@ def test_start_batch_contains_dependency_port_and_pid_controls():
     assert start_file.exists()
     assert "BACKEND_PORT=8000" in contents
     assert "FRONTEND_PORT=5173" in contents
+    assert "BACKEND_HOST=0.0.0.0" in contents
+    assert "FRONTEND_HOST=0.0.0.0" in contents
     assert "python -m venv" in contents
     assert "npm install" in contents
     assert "uvicorn" in contents
+    assert "--host','%BACKEND_HOST%" in contents
+    assert "--host','%FRONTEND_HOST%" in contents
     assert "Start-Process" in contents
     assert ".dashboard-runtime" in contents
     assert "netstat -ano" in contents
