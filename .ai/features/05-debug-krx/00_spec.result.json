@@ -1,0 +1,60 @@
+{
+  "status": "PASS",
+  "next_stage": "01_plan",
+  "human_gate_required": true,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "harness_commit_required": true,
+  "changed_files": [
+    ".ai/features/05-debug-krx/00_spec.md",
+    ".ai/features/05-debug-krx/00_spec.result.json"
+  ],
+  "produced_files": [
+    ".ai/features/05-debug-krx/00_spec.md",
+    ".ai/features/05-debug-krx/00_spec.result.json"
+  ],
+  "verification_summary": "코드 수정 없이 관련 파일을 확인했고, KRX 실서버 OTP 요청에서 url 파라미터는 LOGOUT, bld 파라미터는 OTP 반환임을 확인했다. 테스트 실행은 이 단계 범위가 아니므로 수행하지 않았다.",
+  "fix_inputs": {
+    "feature_name": "05-debug-krx",
+    "affected_areas": [
+      "KRX provider OTP/CSV 계약",
+      "SearchService 마스터 실패 상태 구분",
+      "autocomplete API category optional 통합검색",
+      "SearchTab 카테고리 버튼 제거",
+      "backend/frontend tests"
+    ],
+    "default_decisions": [
+      "category 쿼리는 하위 호환을 위해 optional로 유지하고, 생략 시 통합검색으로 처리한다.",
+      "정상 0건은 status=ok/candidates=[]로, 마스터 실패는 partial 또는 unavailable과 errorMessage로 구분한다.",
+      "새 외부 의존성은 추가하지 않는다.",
+      "KRX provider는 실패를 []로 숨기지 않고 서비스 레이어로 전달한다."
+    ]
+  },
+  "history_notes": {
+    "implemented": [
+      "00_spec 단계 산출물 작성",
+      "관련 코드와 테스트 범위 식별",
+      "KRX OTP 요청의 url/bld 실서버 반응 확인"
+    ],
+    "risks": [
+      "KRX 비공식 다운로드 계약은 변경될 수 있어 구현 단계에서 mock fixture와 실패 처리 보강이 필요하다.",
+      "통합검색은 일부 provider 실패 시 partial 응답 정책을 프론트가 자연스럽게 표시해야 한다.",
+      "SearchResponse 확장은 하위 호환 방식으로 적용해야 한다."
+    ],
+    "future_improvements": [
+      "KRX 마스터 성공 fixture를 별도로 보관해 CSV 헤더 변화에 빠르게 대응한다.",
+      "검색 결과에 범주별 상태 요약을 추가하면 운영 디버깅이 쉬워진다."
+    ],
+    "decisions": [
+      "feature_name_locked에 따라 기능명은 05-debug-krx로 유지한다.",
+      "risk_level은 medium으로 판단한다.",
+      "autocomplete category는 optional로 유지해 기존 클라이언트 호환성을 보존한다.",
+      "SearchService가 provider 실패를 partial/unavailable 상태로 결정한다."
+    ],
+    "unresolved_items": []
+  },
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "spec: define krx autocomplete recovery",
+  "model_mismatch": false,
+  "actual_model": "Codex"
+}
