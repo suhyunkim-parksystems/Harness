@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .context import HarnessRuntime
+
 import json
 import os
 import shutil
@@ -107,7 +112,7 @@ def _unique_command_specs(command_specs: list[dict[str, Any]]) -> list[dict[str,
     return unique_specs
 
 
-def configured_verification_commands(ctx: dict[str, Any], feature: str) -> tuple[list[dict[str, Any]], bool]:
+def configured_verification_commands(ctx: HarnessRuntime, feature: str) -> tuple[list[dict[str, Any]], bool]:
     config = ctx.load_config()
     verification = config.get("verification")
     if verification is None:
@@ -165,7 +170,7 @@ def configured_verification_commands(ctx: dict[str, Any], feature: str) -> tuple
     return commands, required
 
 
-def display_cwd(ctx: dict[str, Any], path: Path) -> str:
+def display_cwd(ctx: HarnessRuntime, path: Path) -> str:
     try:
         resolved = path.resolve()
         root = ctx.ROOT.resolve()
@@ -194,7 +199,7 @@ def _executable_name(command: list[str]) -> str:
     return Path(str(command[0])).name.lower()
 
 
-def _is_inside_repo(ctx: dict[str, Any], path: Path) -> bool:
+def _is_inside_repo(ctx: HarnessRuntime, path: Path) -> bool:
     try:
         resolved = path.resolve()
         root = ctx.ROOT.resolve()
@@ -203,7 +208,7 @@ def _is_inside_repo(ctx: dict[str, Any], path: Path) -> bool:
         return False
 
 
-def _resolve_dynamic_cwd(ctx: dict[str, Any], feature: str, raw_cwd: Any) -> tuple[Path | None, str | None]:
+def _resolve_dynamic_cwd(ctx: HarnessRuntime, feature: str, raw_cwd: Any) -> tuple[Path | None, str | None]:
     root = ctx.ROOT
     if raw_cwd is None or str(raw_cwd).strip() == "":
         return root, None
@@ -228,7 +233,7 @@ def _looks_like_path_arg(value: str) -> bool:
 
 
 def _validate_dynamic_command_safety(
-    ctx: dict[str, Any],
+    ctx: HarnessRuntime,
     command: list[str],
     cwd: Path,
 ) -> str | None:
@@ -296,7 +301,7 @@ def _dynamic_command_rejection(source: str, index: int, reason: str, item: Any =
 
 
 def _coerce_dynamic_command(
-    ctx: dict[str, Any],
+    ctx: HarnessRuntime,
     feature: str,
     item: Any,
     source: str,
@@ -317,9 +322,10 @@ def _coerce_dynamic_command(
         raw_command = item.get("command")
         raw_cwd = item.get("cwd")
         persist = boolish(item.get("persist", True))
-        if item.get("timeout_seconds") is not None:
+        raw_timeout = item.get("timeout_seconds")
+        if raw_timeout is not None:
             try:
-                timeout_seconds = int(item.get("timeout_seconds"))
+                timeout_seconds = int(raw_timeout)
             except (TypeError, ValueError):
                 return None, _dynamic_command_rejection(source, index, "timeout_seconds must be an integer", item)
     else:
@@ -363,7 +369,7 @@ def _coerce_dynamic_command(
 
 
 def dynamic_verification_commands(
-    ctx: dict[str, Any],
+    ctx: HarnessRuntime,
     feature: str,
     result: dict[str, Any] | None,
     configured_commands: list[dict[str, Any]],
@@ -452,7 +458,7 @@ def dynamic_verification_commands(
     return plan
 
 
-def _promotable_config_entry(ctx: dict[str, Any], command_spec: dict[str, Any]) -> dict[str, Any]:
+def _promotable_config_entry(ctx: HarnessRuntime, command_spec: dict[str, Any]) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "name": command_spec["name"],
         "command": command_spec["raw_command"],
@@ -473,13 +479,13 @@ def _promotable_config_entry(ctx: dict[str, Any], command_spec: dict[str, Any]) 
     return entry
 
 
-def _configured_command_identities(ctx: dict[str, Any], feature: str) -> set[tuple[str, tuple[str, ...]]]:
+def _configured_command_identities(ctx: HarnessRuntime, feature: str) -> set[tuple[str, tuple[str, ...]]]:
     commands, _ = ctx.configured_verification_commands(feature)
     return {_command_identity(item["command"], Path(item["cwd"])) for item in commands}
 
 
 def promote_dynamic_verification_commands(
-    ctx: dict[str, Any],
+    ctx: HarnessRuntime,
     feature: str,
     command_specs: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -487,20 +493,15 @@ def promote_dynamic_verification_commands(
     if not promotable:
         return []
 
-    config = ctx.load_config()
+    config = ctx.load_project_config()
     if not isinstance(config, dict):
-        raise HarnessError("harness config must be an object.")
+        raise HarnessError("project harness config must be an object.")
     verification = config.get("verification")
     if verification is None or verification is False:
-        verification = {
-            "enabled": True,
-            "required": True,
-            "timeout_seconds": ctx.DEFAULT_VERIFY_COMMAND_TIMEOUT_SECONDS,
-            "commands": [],
-        }
+        verification = {"commands": []}
         config["verification"] = verification
     if not isinstance(verification, dict):
-        raise HarnessError("verification config must be an object before promotion.")
+        raise HarnessError("project verification config must be an object before promotion.")
     commands = verification.setdefault("commands", [])
     if not isinstance(commands, list):
         raise HarnessError("verification.commands must be a list before promotion.")
@@ -523,12 +524,12 @@ def promote_dynamic_verification_commands(
         )
 
     if promoted:
-        ctx.write_config(config)
+        ctx.write_project_config(config)
     return promoted
 
 
 def run_verification_command(
-    ctx: dict[str, Any],
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     out_dir: Path,
     verify_stage: str,
@@ -650,7 +651,7 @@ def run_verification_command(
 
 
 def run_harness_verification(
-    ctx: dict[str, Any],
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     stage_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -773,10 +774,10 @@ def run_harness_verification(
             ctx.log_event(
                 state,
                 "harness_verification_commands_promoted",
-                "promoted passed dynamic verification commands to harness config",
+                "promoted passed dynamic verification commands to project harness config",
                 stage=verify_stage,
                 count=len(promoted),
-                config=ctx.rel(ctx.config_path()),
+                config=ctx.rel(ctx.project_config_path()),
             )
     summary["finished_at"] = ctx.iso_now()
     result_path.write_text(
@@ -799,7 +800,7 @@ def run_harness_verification(
 
 
 def enforce_harness_verify_result(
-    ctx: dict[str, Any],
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     result: dict[str, Any],
     status: str,

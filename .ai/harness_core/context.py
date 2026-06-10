@@ -1,168 +1,212 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
-from typing import Any, Callable, Mapping
+from pathlib import Path
+from typing import Any, Collection, Mapping, Protocol
 
 
-@dataclass
-class HarnessContext:
-    """Explicit dependency surface passed from harness.py into harness_core.
+class HarnessRuntime(Protocol):
+    """Typed dependency surface that harness.py provides to harness_core.
 
-    Fields mirror the harness-level constants and functions that the core
-    modules consume. This replaces the former ad-hoc ctx dict / globals()
-    injection: dependencies are now an explicit, attribute-accessible,
-    IDE-navigable, statically-checkable interface. Build instances with
-    from_namespace(); every field defaults to None so partial contexts
-    (e.g. in unit tests) are valid. Types are intentionally broad because
-    the harness runtime is composed dynamically.
+    This Protocol is the single source of truth for what the core modules may
+    consume from the harness facade. Core functions annotate their ``ctx``
+    parameter as ``HarnessRuntime``; a static type checker (pyright) then
+    verifies every ``ctx.<member>(...)`` access against these real signatures,
+    catching typos, wrong argument counts, and signature drift between
+    harness.py and the core *before* the code runs.
+
+    The concrete runtime carrier is :class:`HarnessContext`, built from the
+    harness module namespace via :meth:`HarnessContext.from_namespace`. The
+    carrier is intentionally dynamic (any missing member reads back as ``None``)
+    so partial contexts in unit tests stay valid; the *contract* is here.
+
+    The members below were transcribed from the live, resolved signatures of the
+    harness.py facade (``inspect.signature`` over the bound namespace), so they
+    reflect exactly what the harness exposes -- not an idealized approximation.
     """
 
     # --- constants ---
-    AI_DIR: Any = None
-    DEFAULT_MODEL_POLICY: Any = None
-    DEFAULT_PERFORMANCE: Any = None
-    DEFAULT_PROVIDER_CAPABILITIES: Any = None
-    DEFAULT_PROVIDER_COMMANDS: Any = None
-    DEFAULT_PROVIDER_HEARTBEAT_SECONDS: Any = None
-    DEFAULT_VERIFY_COMMAND_TIMEOUT_SECONDS: Any = None
-    DOCS_DIR: Any = None
-    DOCUMENT_STAGE: Any = None
-    HISTORY_DIR: Any = None
-    HISTORY_SCHEMA_VERSION: Any = None
-    NO_COMMIT_STAGES: Any = None
-    PC_CANDIDATES_PATH: Any = None
-    PC_CANDIDATES_SCHEMA_VERSION: Any = None
-    PC_PENDING_STATUS: Any = None
-    PC_PROJECT_WIDE_SCOPE: Any = None
-    PC_REVIEW_STAGE: Any = None
-    PERFORMANCE_PROFILES: Any = None
-    PIPELINE_MODE: Any = None
-    PROJECT_CONTRACT_PATH: Any = None
-    PROVIDERS: Any = None
-    PROVIDER_BY_MODEL: Any = None
-    ROOT: Any = None
-    STAGES: Any = None
-    STAGE_OUTPUTS: Any = None
-    START_STAGE: Any = None
-    VERIFY_RETRY_TARGET_STAGE: Any = None
-    VERIFY_STAGE: Any = None
+    AI_DIR: Path
+    DOCS_DIR: Path
+    HARNESS_CONFIG_PATH: Path
+    HISTORY_DIR: Path
+    PC_CANDIDATES_PATH: Path
+    PROJECT_CONFIG_PATH: Path
+    PROJECT_CONTRACT_PATH: Path
+    PROJECT_DIR: Path
+    ROOT: Path
 
-    # --- callables ---
-    apply_performance_to_command: Callable[..., Any] | None = None
-    assert_no_incomplete_runs_for_new_run: Callable[..., Any] | None = None
-    assert_no_unpushed_commits_for_new_run: Callable[..., Any] | None = None
-    available_providers: Callable[..., Any] | None = None
-    boolish: Callable[..., Any] | None = None
-    build_provider_schedule: Callable[..., Any] | None = None
-    candidate_providers_for_stage: Callable[..., Any] | None = None
-    color_text: Callable[..., Any] | None = None
-    compact_history_text: Callable[..., Any] | None = None
-    compute_provider_schedule: Callable[..., Any] | None = None
-    config_path: Callable[..., Any] | None = None
-    configured_verification_commands: Callable[..., Any] | None = None
-    display_cwd: Callable[..., Any] | None = None
-    enforce_harness_verify_result: Callable[..., Any] | None = None
-    ensure_dirs: Callable[..., Any] | None = None
-    ensure_project_contract_file: Callable[..., Any] | None = None
-    ensure_provider_schedule: Callable[..., Any] | None = None
-    execute_current_prompt: Callable[..., Any] | None = None
-    expand_runtime_placeholders: Callable[..., Any] | None = None
-    expected_docx_path: Callable[..., Any] | None = None
-    extract_feature_name: Callable[..., Any] | None = None
-    extract_project_contract_candidates: Callable[..., Any] | None = None
-    feature_dir: Callable[..., Any] | None = None
-    file_hash: Callable[..., Any] | None = None
-    file_policy_snapshot: Callable[..., Any] | None = None
-    file_size: Callable[..., Any] | None = None
-    filtered_changed_paths: Callable[..., Any] | None = None
-    find_stage_result: Callable[..., Any] | None = None
-    format_bytes: Callable[..., Any] | None = None
-    format_duration: Callable[..., Any] | None = None
-    generate_prompt: Callable[..., Any] | None = None
-    git_add: Callable[..., Any] | None = None
-    git_changed_paths: Callable[..., Any] | None = None
-    git_commit: Callable[..., Any] | None = None
-    git_head: Callable[..., Any] | None = None
-    history_list: Callable[..., Any] | None = None
-    history_object_list: Callable[..., Any] | None = None
-    is_production_code_path: Callable[..., Any] | None = None
-    is_test_path: Callable[..., Any] | None = None
-    iso_now: Callable[..., Any] | None = None
-    known_provider_names: Callable[..., Any] | None = None
-    latest_code_writer: Callable[..., Any] | None = None
-    latest_verification_result_path: Callable[..., Any] | None = None
-    load_config: Callable[..., Any] | None = None
-    load_state: Callable[..., Any] | None = None
-    log_event: Callable[..., Any] | None = None
-    markdown_section_items: Callable[..., Any] | None = None
-    model_policy: Callable[..., Any] | None = None
-    norm_repo_path: Callable[..., Any] | None = None
-    normalize_performance: Callable[..., Any] | None = None
-    now_stamp: Callable[..., Any] | None = None
-    ordered_unique: Callable[..., Any] | None = None
-    parse_result_json_from_text: Callable[..., Any] | None = None
-    pc_candidates_path: Callable[..., Any] | None = None
-    performance_profile: Callable[..., Any] | None = None
-    pipeline_extracts_pc_candidates: Callable[..., Any] | None = None
-    prepare_provider_command: Callable[..., Any] | None = None
-    preset_provider_for_stage: Callable[..., Any] | None = None
-    project_contract_prompt_text: Callable[..., Any] | None = None
-    prompt_path: Callable[..., Any] | None = None
-    provider_available: Callable[..., Any] | None = None
-    provider_capabilities: Callable[..., Any] | None = None
-    provider_command: Callable[..., Any] | None = None
-    provider_config: Callable[..., Any] | None = None
-    provider_enabled: Callable[..., Any] | None = None
-    provider_failure_reason: Callable[..., Any] | None = None
-    provider_for_stage: Callable[..., Any] | None = None
-    provider_order_for_role: Callable[..., Any] | None = None
-    provider_performance_settings: Callable[..., Any] | None = None
-    provider_schedule_stages: Callable[..., Any] | None = None
-    raw_provider_command: Callable[..., Any] | None = None
-    read_json_file: Callable[..., Any] | None = None
-    read_preset: Callable[..., Any] | None = None
-    read_stage_result_json: Callable[..., Any] | None = None
-    record_project_history: Callable[..., Any] | None = None
-    redact_prompt_command: Callable[..., Any] | None = None
-    rel: Callable[..., Any] | None = None
-    resolve_executable: Callable[..., Any] | None = None
-    run_dir: Callable[..., Any] | None = None
-    run_harness_verification: Callable[..., Any] | None = None
-    run_text_provider_prompt: Callable[..., Any] | None = None
-    safe_git_head: Callable[..., Any] | None = None
-    save_state: Callable[..., Any] | None = None
-    should_extract_pc_candidates: Callable[..., Any] | None = None
-    slugify: Callable[..., Any] | None = None
-    stage_default_next: Callable[..., Any] | None = None
-    stage_output_path: Callable[..., Any] | None = None
-    stage_provider_score: Callable[..., Any] | None = None
-    stage_result_json_path: Callable[..., Any] | None = None
-    stage_role: Callable[..., Any] | None = None
-    stage_status: Callable[..., Any] | None = None
-    state_path: Callable[..., Any] | None = None
-    suggested_retry_command: Callable[..., Any] | None = None
-    validate_deep_thinking_ready: Callable[..., Any] | None = None
-    validate_docx_file: Callable[..., Any] | None = None
-    validate_slug: Callable[..., Any] | None = None
-    verification_dir: Callable[..., Any] | None = None
-    warn_pending_pc_candidates_for_new_run: Callable[..., Any] | None = None
-    write_config: Callable[..., Any] | None = None
-    write_handoff: Callable[..., Any] | None = None
-    write_json_file: Callable[..., Any] | None = None
-    write_policy_violations: Callable[..., Any] | None = None
+    DEFAULT_MODEL_POLICY: dict[str, Any]
+    DEFAULT_PROVIDER_CAPABILITIES: dict[str, Any]
+    DEFAULT_PROVIDER_COMMANDS: dict[str, Any]
+    PERFORMANCE_PROFILES: dict[str, Any]
+    PROVIDER_BY_MODEL: dict[str, str]
+    STAGE_OUTPUTS: dict[str, str]
+
+    DEFAULT_PERFORMANCE: str
+    PC_PENDING_STATUS: str
+    PC_PROJECT_WIDE_SCOPE: str
+    PC_REVIEW_STAGE: str
+    PIPELINE_MODE: str
+    START_STAGE: str
+    VERIFY_STAGE: str
+    DOCUMENT_STAGE: str
+    VERIFY_RETRY_TARGET_STAGE: str
+
+    DEFAULT_PROVIDER_HEARTBEAT_SECONDS: int
+    DEFAULT_VERIFY_COMMAND_TIMEOUT_SECONDS: int
+    HISTORY_SCHEMA_VERSION: int
+    PC_CANDIDATES_SCHEMA_VERSION: int
+
+    PROVIDERS: tuple[str, ...]
+    STAGES: list[str]
+    NO_COMMIT_STAGES: Collection[str]
+
+    # --- callables (signatures mirror the harness.py facade) ---
+    def apply_performance_to_command(self, provider: str, command: list[str], performance: Any | None) -> list[str]: ...
+    def assert_no_incomplete_runs_for_new_run(self) -> None: ...
+    def assert_prev_run_branch_merged(self) -> None: ...
+    def available_providers(self) -> list[str]: ...
+    def boolish(self, value: Any) -> bool: ...
+    def build_provider_schedule(self, state: dict[str, Any]) -> dict[str, str]: ...
+    def candidate_providers_for_stage(self, stage: str, policy: dict[str, Any], available: list[str]) -> list[str]: ...
+    def color_text(self, text: str, *styles: str) -> str: ...
+    def compact_history_text(self, value: Any, max_len: int = 240) -> str: ...
+    def compute_provider_schedule(self, state: dict[str, Any], *, strict_independence: bool) -> dict[str, str] | None: ...
+    def config_path(self) -> Path: ...
+    def configured_verification_commands(self, feature: str) -> tuple[list[dict[str, Any]], bool]: ...
+    def display_cwd(self, path: Path) -> str: ...
+    def enforce_harness_verify_result(self, state: dict[str, Any], result: dict[str, Any], status: str, next_stage: str) -> tuple[str, str]: ...
+    def ensure_dirs(self) -> None: ...
+    def ensure_project_contract_file(self) -> None: ...
+    def ensure_provider_schedule(self, state: dict[str, Any], *, persist: bool = True, console: bool = False, record_event: bool = True) -> dict[str, str]: ...
+    def execute_current_prompt(self, state: dict[str, Any], timeout_seconds: int) -> dict[str, Any]: ...
+    def expand_runtime_placeholders(self, value: Any, feature: str) -> str: ...
+    def expected_docx_path(self, feature: str) -> Path: ...
+    def extract_feature_name(self, spec_text: str) -> str | None: ...
+    def extract_project_contract_candidates(self, state: dict[str, Any]) -> dict[str, Any]: ...
+    def feature_dir(self, feature: str) -> Path: ...
+    def file_hash(self, path: Path) -> str: ...
+    def file_policy_snapshot(self, feature: str) -> dict[str, str]: ...
+    def file_size(self, path: Path) -> int: ...
+    def filtered_changed_paths(self, state: dict[str, Any], stage: str) -> list[str]: ...
+    def find_stage_result(self, text: str) -> dict[str, Any]: ...
+    def format_bytes(self, size: int) -> str: ...
+    def format_duration(self, seconds: float) -> str: ...
+    def generate_prompt(self, state: dict[str, Any], stage: str, retry_context: str | None = None) -> Path: ...
+    def git_add(self, paths: list[str]) -> None: ...
+    def git_changed_paths(self) -> list[str]: ...
+    def git_commit(self, message: str, amend: bool = False) -> str: ...
+    def git_head(self) -> str: ...
+    def current_branch(self) -> str: ...
+    def branch_exists(self, name: str) -> bool: ...
+    def checkout_new_branch(self, name: str) -> None: ...
+    def branch_is_merged(self, branch: str, base: str) -> bool: ...
+    def merge_tree_conflicts(self, base: str, branch: str) -> "list[str] | None": ...
+    def history_list(self, value: Any, max_items: int = 40) -> list[str]: ...
+    def history_object_list(self, value: Any, title_keys: list[str], max_items: int = 40) -> list[dict[str, Any]]: ...
+    def is_production_code_path(self, path: str) -> bool: ...
+    def is_test_path(self, path: str) -> bool: ...
+    def iso_now(self) -> str: ...
+    def known_provider_names(self) -> list[str]: ...
+    def latest_code_writer(self, assignments: dict[str, str], stages: list[str]) -> str | None: ...
+    def latest_verification_result_path(self, feature: str) -> Path: ...
+    def load_config(self) -> dict[str, Any]: ...
+    def load_project_config(self) -> dict[str, Any]: ...
+    def load_state(self, feature: str) -> dict[str, Any]: ...
+    def log_event(self, state: dict[str, Any], event: str, message: str, *, stage: str | None = None, console: bool = True, **fields: Any) -> None: ...
+    def markdown_section_items(self, text: str, heading_needles: list[str], max_items: int = 20) -> list[str]: ...
+    def model_policy(self) -> dict[str, Any]: ...
+    def norm_repo_path(self, path: str) -> str: ...
+    def normalize_performance(self, value: Any | None) -> str: ...
+    def now_stamp(self) -> str: ...
+    def ordered_unique(self, values: list[str] | tuple[str, ...]) -> list[str]: ...
+    def parse_result_json_from_text(self, text: str) -> dict[str, Any]: ...
+    def pc_candidates_path(self) -> Path: ...
+    def performance_profile(self, value: Any | None) -> dict[str, dict[str, str]]: ...
+    def pipeline_extracts_pc_candidates(self, pipeline_mode: Any) -> bool: ...
+    def prepare_provider_command(self, provider: str, prompt_text: str | None = None, prompt_file: Path | None = None, log_file: Path | None = None, performance: Any | None = None) -> tuple[list[str], bool]: ...
+    def preset_provider_for_stage(self, stage: str) -> str | None: ...
+    def project_config_path(self) -> Path: ...
+    def project_contract_prompt_text(self) -> str: ...
+    def prompt_path(self, state: dict[str, Any], stage: str) -> Path: ...
+    def provider_available(self, provider: str) -> bool: ...
+    def provider_capabilities(self, provider: str) -> set[str]: ...
+    def provider_command(self, provider: str) -> list[str]: ...
+    def provider_config(self, provider: str) -> dict[str, Any]: ...
+    def provider_enabled(self, provider: str) -> bool: ...
+    def provider_failure_reason(self, state: dict[str, Any], *, stage: str, provider: str, failure: str, stdout_path: Path, stderr_path: Path, provider_log_path: Path) -> str: ...
+    def provider_for_stage(self, stage: str, state: dict[str, Any] | None = None) -> str: ...
+    def provider_order_for_role(self, stage: str, role: str, policy: dict[str, Any]) -> list[str]: ...
+    def provider_performance_settings(self, provider: str, performance: Any | None) -> dict[str, str]: ...
+    def provider_schedule_stages(self, state: dict[str, Any]) -> list[str]: ...
+    def raw_provider_command(self, provider: str) -> list[str]: ...
+    def read_json_file(self, path: Path, default: Any) -> Any: ...
+    def read_preset(self, stage: str) -> tuple[dict[str, Any], str, str]: ...
+    def read_stage_result_json(self, path: Path) -> dict[str, Any]: ...
+    def record_project_history(self, state: dict[str, Any]) -> dict[str, Any]: ...
+    def redact_prompt_command(self, command: list[str], prompt_text: str | None) -> list[str]: ...
+    def rel(self, path: Path) -> str: ...
+    def resolve_executable(self, command: list[str]) -> str | None: ...
+    def run_dir(self, feature: str) -> Path: ...
+    def run_harness_verification(self, state: dict[str, Any], stage_result: dict[str, Any] | None = None) -> dict[str, Any]: ...
+    def run_text_provider_prompt(self, provider: str, prompt_text: str, *, logs_dir: Path, log_prefix: str, timeout_seconds: int = 3600, performance: Any | None = None) -> dict[str, Any]: ...
+    def safe_git_head(self) -> str: ...
+    def save_state(self, state: dict[str, Any]) -> None: ...
+    def should_extract_pc_candidates(self, state: dict[str, Any]) -> bool: ...
+    def slugify(self, text: str) -> str: ...
+    def stage_default_next(self, stage: str) -> str | None: ...
+    def stage_output_path(self, feature: str, stage: str) -> Path: ...
+    def stage_provider_score(self, stage: str, provider: str, candidates: list[str], assignments: dict[str, str], ordered_stages: list[str], policy: dict[str, Any]) -> int: ...
+    def stage_result_json_path(self, feature: str, stage: str) -> Path: ...
+    def stage_role(self, stage: str) -> str: ...
+    def stage_status(self, result: dict[str, Any]) -> str: ...
+    def state_path(self, feature: str) -> Path: ...
+    def suggested_retry_command(self, state: dict[str, Any], *, auto: bool = True) -> str: ...
+    def validate_deep_thinking_ready(self, state: dict[str, Any] | None = None) -> dict[str, Any]: ...
+    def validate_docx_file(self, path: Path) -> str | None: ...
+    def validate_slug(self, slug: str) -> bool: ...
+    def verification_dir(self, feature: str) -> Path: ...
+    def warn_pending_pc_candidates_for_new_run(self) -> None: ...
+    def write_handoff(self, state: dict[str, Any], reason: str, *, stage: str | None = None, next_action: str | None = None, result: dict[str, Any] | None = None) -> Path: ...
+    def write_json_file(self, path: Path, value: Any) -> None: ...
+    def write_policy_violations(self, state: dict[str, Any], stage: str) -> list[str]: ...
+    def write_project_config(self, config: dict[str, Any]) -> None: ...
+
+
+def _runtime_member_names() -> frozenset[str]:
+    """Member names the carrier accepts -- derived solely from HarnessRuntime so
+    the Protocol stays the single source of truth (constants live in
+    ``__annotations__``; callables show up as public attributes via ``dir``)."""
+    names = set(getattr(HarnessRuntime, "__annotations__", {}))
+    names.update(name for name in dir(HarnessRuntime) if not name.startswith("_"))
+    return frozenset(names)
+
+
+_KNOWN_MEMBERS = _runtime_member_names()
+
+
+class HarnessContext:
+    """Dynamic runtime carrier implementing :class:`HarnessRuntime`.
+
+    Constructed from harness.py's module namespace (constants + facade
+    functions). Only declared HarnessRuntime members are retained; any member
+    not supplied reads back as ``None`` via ``__getattr__`` so partial contexts
+    (e.g. in unit tests) remain valid. The typed contract -- and the only thing
+    consumers should rely on -- is HarnessRuntime; this class is just the bag of
+    bound values. The ``__getattr__`` fallback also makes the carrier
+    structurally satisfy HarnessRuntime for the type checker.
+    """
+
+    def __init__(self, **values: Any) -> None:
+        self.__dict__.update(values)
 
     @classmethod
-    def from_namespace(cls, ns: "Mapping[str, Any]") -> "HarnessContext":
-        """Build a context from any name->value mapping, ignoring extra keys."""
-        known = {f.name for f in fields(cls)}
-        return cls(**{k: v for k, v in ns.items() if k in known})
+    def from_namespace(cls, ns: Mapping[str, Any]) -> "HarnessContext":
+        """Build a context from any name->value mapping, keeping only declared
+        HarnessRuntime members and ignoring everything else."""
+        return cls(**{key: value for key, value in ns.items() if key in _KNOWN_MEMBERS})
 
-    # --- dict-compatibility safety belt (defensive; prefer attribute access) ---
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __contains__(self, key: str) -> bool:
-        return getattr(self, key, None) is not None
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
+    def __getattr__(self, name: str) -> Any:
+        # Reached only for declared members that were never supplied; mirrors the
+        # historical all-optional context so partial test contexts stay valid.
+        return None

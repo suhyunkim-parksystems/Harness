@@ -4,30 +4,30 @@ role: "feature_documentation"
 preferred_model: "Antigravity"
 model_policy: "preferred_not_hard_block"
 required_inputs:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_plan.md"
-  - ".ai/features/[기능명]/02_dev.md"
-  - ".ai/features/[기능명]/03_review.md"
-  - ".ai/features/[기능명]/04_fix.md"
-  - ".ai/features/[기능명]/05_verify.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/02_dev.md"
+  - ".project/features/[기능명]/03_review.md"
+  - ".project/features/[기능명]/04_fix.md"
+  - ".project/features/[기능명]/05_verify.md"
   - ".ai/templates/docx_helper.py"
 outputs:
-  - ".ai/docs/[기능명]_명세서.docx"
-  - ".ai/features/[기능명]/06_document.md"
+  - ".project/docs/[기능명]_명세서.docx"
+  - ".project/features/[기능명]/06_document.md"
 allowed_writes:
-  - ".ai/docs/[기능명]_명세서.docx"
-  - ".ai/features/[기능명]/06_document.md"
-  - ".ai/runs/[기능명]/document_build.py"
+  - ".project/docs/[기능명]_명세서.docx"
+  - ".project/features/[기능명]/06_document.md"
+  - ".project/runs/[기능명]/document_build.py"
 forbidden_writes:
   - "production_code"
   - "tests"
   - ".ai/templates/docx_helper.py"
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_plan.md"
-  - ".ai/features/[기능명]/02_dev.md"
-  - ".ai/features/[기능명]/03_review.md"
-  - ".ai/features/[기능명]/04_fix.md"
-  - ".ai/features/[기능명]/05_verify.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/02_dev.md"
+  - ".project/features/[기능명]/03_review.md"
+  - ".project/features/[기능명]/04_fix.md"
+  - ".project/features/[기능명]/05_verify.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 commit_owner: "harness"
@@ -65,18 +65,18 @@ default_next_stage: "done"
 
 ## 작업 순서
 
-1. `.ai/features/[기능명]/05_verify.md`의 최종 판정이 PASS인지 확인한다.
-2. 최종 판정이 PASS가 아니면 `.ai/features/[기능명]/06_document.md`에 `status: SKIPPED`를 기록하고 멈춘다.
-3. `.ai/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항을 파악한다.
-4. `.ai/features/[기능명]/01_plan.md`를 읽고 구현 접근 방식, 검토된 대안, 위험 구간, 테스트 전략 등 설계 의사결정을 파악한다.
-5. `.ai/features/[기능명]/02_dev.md`를 읽고 구현 내용을 파악한다.
-6. `.ai/features/[기능명]/03_review.md`를 읽고 리뷰의 핵심 포인트를 파악한다.
-7. `.ai/features/[기능명]/04_fix.md`를 읽고 최종 설계 결정과 수용/거부/보류 항목을 파악한다.
-8. `.ai/features/[기능명]/05_verify.md`를 읽고 테스트 커버리지와 검증 결과를 파악한다.
-9. `## 문서 생성 스크립트` 패턴을 참고하여 `.ai/runs/[기능명]/document_build.py`를 작성하고 실행하여 `.ai/docs/[기능명]_명세서.docx`를 생성한다.
+1. `.project/features/[기능명]/05_verify.md`의 최종 판정이 PASS인지 확인한다.
+2. 최종 판정이 PASS가 아니면 `.project/features/[기능명]/06_document.md`에 `status: SKIPPED`를 기록하고 멈춘다.
+3. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항을 파악한다.
+4. `.project/features/[기능명]/01_plan.md`를 읽고 구현 접근 방식, 검토된 대안, 위험 구간, 테스트 전략 등 설계 의사결정을 파악한다.
+5. `.project/features/[기능명]/02_dev.md`를 읽고 구현 내용을 파악한다.
+6. `.project/features/[기능명]/03_review.md`를 읽고 리뷰의 핵심 포인트를 파악한다.
+7. `.project/features/[기능명]/04_fix.md`를 읽고 최종 설계 결정과 수용/거부/보류 항목을 파악한다.
+8. `.project/features/[기능명]/05_verify.md`를 읽고 테스트 커버리지와 검증 결과를 파악한다.
+9. `## 문서 생성 스크립트` 패턴을 참고하여 `.project/runs/[기능명]/document_build.py`를 작성하고 실행하여 `.project/docs/[기능명]_명세서.docx`를 생성한다.
 10. 생성한 `.docx`가 유효한 Office Open XML 문서인지 아래 산출물 검증 절차로 확인한다.
-11. 검증에 실패하면 가짜 `.docx`를 성공 산출물로 기록하지 말고 `.ai/features/[기능명]/06_document.md`에 `status: FAIL`과 구체적인 실패 사유를 기록한다.
-12. 검증에 성공한 경우에만 생성 결과를 `.ai/features/[기능명]/06_document.md`에 기록한다.
+11. 검증에 실패하면 가짜 `.docx`를 성공 산출물로 기록하지 말고 `.project/features/[기능명]/06_document.md`에 `status: FAIL`과 구체적인 실패 사유를 기록한다.
+12. 검증에 성공한 경우에만 생성 결과를 `.project/features/[기능명]/06_document.md`에 기록한다.
 
 ---
 
@@ -133,13 +133,15 @@ default_next_stage: "done"
 - 반드시 `.docx` 확장자로 작성한다.
 - `.docx`는 확장자만 `.docx`인 텍스트 파일이 아니라, Microsoft Word에서 열리는 유효한 Office Open XML 문서여야 한다.
 - **반드시 `.ai/templates/docx_helper.py`를 사용하여 생성한다.** 아래 `## 문서 생성 스크립트` 패턴을 따른다.
-- 문서 생성용 Python 스크립트는 `.ai/runs/[기능명]/document_build.py`에만 작성한다.
+- 문서 생성용 Python 스크립트는 `.project/runs/[기능명]/document_build.py`에만 작성한다.
 - `.ai/templates/docx_helper.py`는 읽기 전용 템플릿으로 사용하고 수정하지 않는다.
 - Markdown, HTML, plain text, JSON, XML 본문을 `.docx` 확장자로만 저장하는 것은 실패로 간주한다.
 - `python-docx`를 사용할 수 없는 환경이면 `.docx`를 만들지 말고 `06_document.md`에 `status: FAIL`과 구체적인 사유를 기록한다.
 - 파일 목록, 의존성 목록, 테스트 현황 중 최소 2개 이상은 반드시 `add_table`로 표로 정리한다.
 - 코드 예시는 반드시 `add_code_block`으로 작성한다.
+- 문서 전체 형식은 `.ai/templates/docx_helper.py`의 helper가 제공하는 기본 형식 토큰을 따른다. 임의의 직접 서식으로 폰트, 여백, 색상, 표 테두리, 셀 여백을 덮어쓰지 않는다.
 - 섹션 제목은 `add_h1`, 소항목은 `add_h2`, 본문은 `add_paragraph`, 목록은 `add_bullet`을 사용한다.
+- 상단 보조 문구가 필요하면 `add_document_kicker`, 문서 제목은 `add_document_title`, 출처/각주는 `add_source_note`, 표 단위 표기는 `add_unit_label`을 사용한다.
 - 첫 섹션에는 기능명, 최종 판정, 최종 완성 일시를 한눈에 볼 수 있는 요약 문단 또는 요약 표를 둔다.
 - 긴 파일 경로, 테스트 명령, API 예시는 표 셀이나 코드 블록 안에서 줄바꿈되어도 의미가 유지되도록 작성한다.
 - 빈 섹션을 만들지 않는다. 해당 내용이 없으면 "없음"과 그 근거를 적는다.
@@ -147,22 +149,38 @@ default_next_stage: "done"
 - 1~5단계 md의 내용을 그대로 복붙하지 않고 핵심만 추출한다.
 - md 파일에 없는 내용을 추측으로 채우지 않는다.
 
+## 문서 형식 규칙
+
+- 페이지는 A4 세로이며 여백은 위 3.00cm, 좌/우/아래 2.54cm, header 1.50cm, footer 1.75cm를 사용한다.
+- 영문/숫자/기호 글꼴은 Arial, 한글 글꼴은 맑은 고딕을 사용한다. `ascii`, `hAnsi`, `cs`는 Arial, `eastAsia`는 맑은 고딕으로 지정되어야 한다.
+- 기본 본문은 12pt, 줄간격 1.5줄, 검정색을 사용한다.
+- 상단 보조 문구와 출처/각주는 10pt를 사용한다. 상단 보조 문구는 회색 `#808080`을 사용한다.
+- 문서 제목은 16pt bold를 사용한다. 기본 제목 색상은 `#002060`이며, 강조가 필요한 일부 단어만 `#00B0F0`을 사용할 수 있다.
+- 섹션 제목은 16pt bold 검정, 소항목 제목은 12pt bold 검정을 사용한다.
+- 표는 전체 폭 약 15.99cm, 얇은 단일선 그리드(`single`, `sz=4`), 셀 좌/우 여백 약 0.19cm, 셀 위/아래 여백 0, 세로 가운데 정렬을 사용한다.
+- 표 헤더는 배경색을 넣지 않고 bold로만 구분한다. 데이터 성격에 따라 `add_table(..., column_widths_cm=[...], alignments=[...])`로 열 폭과 정렬을 명시한다.
+- 표 행 높이는 약 20pt를 기본으로 하되, 긴 텍스트가 잘리면 행이 늘어날 수 있도록 내용 축약 또는 열 폭 조정으로 해결한다.
+- 코드 블록은 `add_code_block`을 사용하며 회색 배경과 고정폭 글꼴을 유지한다.
+
 ---
 
 ## 문서 생성 스크립트
 
-아래 패턴으로 `.ai/runs/[기능명]/document_build.py`를 작성하고 실행하여 `.docx`를 생성한다.
+아래 패턴으로 `.project/runs/[기능명]/document_build.py`를 작성하고 실행하여 `.docx`를 생성한다.
 `[기능명]`, `[내용]` 부분을 실제 내용으로 채운다.
 
 ```python
 import sys, os
 sys.path.insert(0, ".ai/templates")
 from docx_helper import (
-    create_doc, add_h1, add_h2, add_paragraph,
-    add_bullet, add_code_block, add_table
+    create_doc, add_document_kicker, add_document_title,
+    add_h1, add_h2, add_paragraph, add_bullet,
+    add_code_block, add_table, add_source_note
 )
 
 doc = create_doc()
+add_document_kicker(doc, "Feature Specification")
+add_document_title(doc, "[기능명] 명세서")
 
 # ── 1. 개요 ──────────────────────────────────────────────────────────────────
 add_h1(doc, "1. 개요")
@@ -227,11 +245,12 @@ add_table(doc,
 add_h1(doc, "7. 알려진 한계 및 추후 개선")
 add_bullet(doc, "[현재 구현의 제약사항]")
 add_bullet(doc, "[보류된 항목 및 향후 개선 방향]")
+add_source_note(doc, "작성 기준: 00_spec~05_verify 단계 산출물")
 
 # ── 저장 ──────────────────────────────────────────────────────────────────────
-os.makedirs(".ai/docs", exist_ok=True)
-doc.save(".ai/docs/[기능명]_명세서.docx")
-print("생성 완료: .ai/docs/[기능명]_명세서.docx")
+os.makedirs(".project/docs", exist_ok=True)
+doc.save(".project/docs/[기능명]_명세서.docx")
+print("생성 완료: .project/docs/[기능명]_명세서.docx")
 ```
 
 ---
@@ -240,7 +259,7 @@ print("생성 완료: .ai/docs/[기능명]_명세서.docx")
 
 문서 생성 후 아래 검증을 반드시 수행한다.
 
-1. `.ai/docs/[기능명]_명세서.docx` 파일이 존재하는지 확인한다.
+1. `.project/docs/[기능명]_명세서.docx` 파일이 존재하는지 확인한다.
 2. 파일 첫 바이트가 ZIP 시그니처 `PK`인지 확인한다.
 3. ZIP 내부에 `[Content_Types].xml`과 `word/document.xml`이 있는지 확인한다.
 4. Word 문서 본문이 비어 있지 않은지 확인한다.
@@ -253,7 +272,7 @@ print("생성 완료: .ai/docs/[기능명]_명세서.docx")
 PowerShell 예시:
 
 ```powershell
-Format-Hex -Path .ai\docs\[기능명]_명세서.docx | Select-Object -First 1
+Format-Hex -Path .project\docs\[기능명]_명세서.docx | Select-Object -First 1
 ```
 
 Python 예시:
@@ -261,7 +280,7 @@ Python 예시:
 ```python
 from zipfile import ZipFile, is_zipfile
 
-path = ".ai/docs/[기능명]_명세서.docx"
+path = ".project/docs/[기능명]_명세서.docx"
 assert is_zipfile(path)
 with ZipFile(path) as zf:
     names = set(zf.namelist())
@@ -281,7 +300,7 @@ with ZipFile(path) as zf:
 
 ## 기록 양식
 
-문서 생성 후 `.ai/features/[기능명]/06_document.md`에 아래 형식으로 작성한다.
+문서 생성 후 `.project/features/[기능명]/06_document.md`에 아래 형식으로 작성한다.
 
 ```markdown
 # 06_document - [기능명]
@@ -295,7 +314,7 @@ with ZipFile(path) as zf:
 - SKIPPED 사유:
 
 ## 생성 문서
-- docx_path: .ai/docs/[기능명]_명세서.docx
+- docx_path: .project/docs/[기능명]_명세서.docx
 - 포함한 주요 섹션:
 - 표 개수:
 - Heading 1 섹션 개수:
@@ -317,8 +336,8 @@ with ZipFile(path) as zf:
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/docs/[기능명]_명세서.docx
-  - .ai/features/[기능명]/06_document.md
+  - .project/docs/[기능명]_명세서.docx
+  - .project/features/[기능명]/06_document.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false
@@ -334,7 +353,7 @@ with ZipFile(path) as zf:
 - 05_verify.md가 FAIL인 기능의 `.docx` 명세서를 작성하지 않는다.
 - `.ai/templates/docx_helper.py`를 사용하지 않고 raw XML로 직접 작성하지 않는다.
 - `.ai/templates/docx_helper.py`를 수정하지 않는다.
-- 문서 생성용 임시 스크립트를 `.ai/runs/[기능명]/document_build.py` 외 경로에 작성하지 않는다.
+- 문서 생성용 임시 스크립트를 `.project/runs/[기능명]/document_build.py` 외 경로에 작성하지 않는다.
 - Markdown/HTML/plain text 파일을 `.docx` 확장자로 저장하지 않는다.
 - 문서 산출물을 모델이 직접 커밋하지 않는다. 실제 커밋은 PASS 시 하네스가 처리한다.
 - 프로덕션 코드를 수정하지 않는다.

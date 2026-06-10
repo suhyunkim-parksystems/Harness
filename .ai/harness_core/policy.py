@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .context import HarnessRuntime
+
 import os
 import subprocess
 from pathlib import Path
@@ -96,10 +101,10 @@ SNAPSHOT_GENERATED_FILE_SUFFIXES = {
 
 KNOWN_ROOT_PATHS = {
     ".ai",
+    ".project",
     ".gitattributes",
     ".gitignore",
     "README.md",
-    "presets",
     "src",
     "tests",
 }
@@ -171,9 +176,9 @@ WARNING_POLICY_FILE_NAMES = {
 
 def is_harness_internal_path(path: str, feature: str) -> bool:
     path = norm_repo_path(path)
-    if not path.startswith(".ai/runs/"):
+    if not path.startswith(".project/runs/"):
         return False
-    return path != f".ai/runs/{feature}/document_build.py"
+    return path != f".project/runs/{feature}/document_build.py"
 
 
 def is_snapshot_generated_path(path: str) -> bool:
@@ -225,7 +230,7 @@ def is_policy_monitored_path(path: str) -> bool:
     return is_source_policy_path(path) or is_warning_policy_path(path)
 
 
-def git_ignored_paths(ctx: dict[str, Any], paths: list[str]) -> set[str]:
+def git_ignored_paths(ctx: HarnessRuntime, paths: list[str]) -> set[str]:
     if not paths:
         return set()
     root = ctx.ROOT
@@ -248,20 +253,20 @@ def git_ignored_paths(ctx: dict[str, Any], paths: list[str]) -> set[str]:
     return {norm_repo_path(line.strip()) for line in proc.stdout.splitlines() if line.strip()}
 
 
-def snapshot_excluded_paths(ctx: dict[str, Any], paths: list[str]) -> set[str]:
+def snapshot_excluded_paths(ctx: HarnessRuntime, paths: list[str]) -> set[str]:
     generated = {path for path in paths if is_snapshot_generated_path(path)}
     remaining = [path for path in paths if path not in generated]
     return generated | git_ignored_paths(ctx, remaining)
 
 
-def repo_child_path(ctx: dict[str, Any], parent: Path, name: str) -> str:
+def repo_child_path(ctx: HarnessRuntime, parent: Path, name: str) -> str:
     root = ctx.ROOT
     if parent.resolve() == root.resolve():
         return name
     return f"{ctx.rel(parent)}/{name}"
 
 
-def file_policy_snapshot(ctx: dict[str, Any], feature: str) -> dict[str, str]:
+def file_policy_snapshot(ctx: HarnessRuntime, feature: str) -> dict[str, str]:
     root = ctx.ROOT
     snapshot: dict[str, str] = {}
     candidates: list[tuple[Path, str]] = []
@@ -293,7 +298,7 @@ def file_policy_snapshot(ctx: dict[str, Any], feature: str) -> dict[str, str]:
     return snapshot
 
 
-def changed_since_snapshot(ctx: dict[str, Any], before: dict[str, str], feature: str) -> list[str]:
+def changed_since_snapshot(ctx: HarnessRuntime, before: dict[str, str], feature: str) -> list[str]:
     after = file_policy_snapshot(ctx, feature)
     paths = set(before) | set(after)
     excluded = snapshot_excluded_paths(ctx, list(paths))
@@ -361,7 +366,7 @@ def warning_write_message(path: str, policy_detail: str) -> str:
 
 
 def record_write_policy_warnings(
-    ctx: dict[str, Any],
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     stage: str,
     warnings: list[str],
@@ -371,11 +376,11 @@ def record_write_policy_warnings(
     state.setdefault("write_policy_warnings", []).append(
         {
             "stage": stage,
-            "at": ctx.iso_now() if "iso_now" in ctx else "",
+            "at": ctx.iso_now() if ctx.iso_now is not None else "",
             "warnings": warnings,
         }
     )
-    if "log_event" in ctx:
+    if ctx.log_event is not None:
         ctx.log_event(
             state,
             "write_policy_warning",
@@ -385,7 +390,7 @@ def record_write_policy_warnings(
         )
 
 
-def write_policy_violations(ctx: dict[str, Any], state: dict[str, Any], stage: str) -> list[str]:
+def write_policy_violations(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> list[str]:
     feature = state["feature_name"]
     meta, _, _ = ctx.read_preset(stage)
     snapshots = state.get("stage_file_snapshots", {})

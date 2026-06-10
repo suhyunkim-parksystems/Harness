@@ -48,6 +48,7 @@ class PipelineBehaviorCharacterizationTests(unittest.TestCase):
         self.assertEqual(harness.NO_COMMIT_STAGES, set())
         self.assertEqual(harness.COMMIT_STAGES, set(FULL_STAGES))
         self.assertEqual(harness.PRESETS_DIR.name, "full")
+        self.assertEqual(harness.PRESETS_DIR.parent, harness.AI_DIR / "presets")
 
     def test_pipeline_extracts_pc_candidates_per_mode(self) -> None:
         self.assertFalse(harness.pipeline_extracts_pc_candidates("fast"))
@@ -60,22 +61,22 @@ class PipelineBehaviorCharacterizationTests(unittest.TestCase):
 
     def test_harness_script_per_mode(self) -> None:
         self.assertEqual(
-            harness.harness_script_for_pipeline_mode("fast"), ".ai\\harness_fast.py"
+            harness.harness_script_for_pipeline_mode("fast"), ".ai/harness_fast.py"
         )
         self.assertEqual(
             harness.harness_script_for_pipeline_mode("standard"),
-            ".ai\\harness_standard.py",
+            ".ai/harness_standard.py",
         )
         self.assertEqual(
-            harness.harness_script_for_pipeline_mode("full"), ".ai\\harness.py"
+            harness.harness_script_for_pipeline_mode("full"), ".ai/harness.py"
         )
         # Empty/None falls back to the active module mode (full).
         self.assertEqual(
-            harness.harness_script_for_pipeline_mode(None), ".ai\\harness.py"
+            harness.harness_script_for_pipeline_mode(None), ".ai/harness.py"
         )
         # Unknown explicit mode defaults to the full harness script.
         self.assertEqual(
-            harness.harness_script_for_pipeline_mode("weird"), ".ai\\harness.py"
+            harness.harness_script_for_pipeline_mode("weird"), ".ai/harness.py"
         )
 
 
@@ -92,11 +93,11 @@ class PipelineRegistryTests(unittest.TestCase):
         self.assertFalse(pipeline.extracts_pc_candidates("weird"))
         self.assertFalse(pipeline.extracts_pc_candidates(None))
 
-        self.assertEqual(pipeline.harness_script("fast"), ".ai\\harness_fast.py")
-        self.assertEqual(pipeline.harness_script("standard"), ".ai\\harness_standard.py")
-        self.assertEqual(pipeline.harness_script("full"), ".ai\\harness.py")
-        self.assertEqual(pipeline.harness_script("weird"), ".ai\\harness.py")
-        self.assertEqual(pipeline.harness_script(None), ".ai\\harness.py")
+        self.assertEqual(pipeline.harness_script("fast"), ".ai/harness_fast.py")
+        self.assertEqual(pipeline.harness_script("standard"), ".ai/harness_standard.py")
+        self.assertEqual(pipeline.harness_script("full"), ".ai/harness.py")
+        self.assertEqual(pipeline.harness_script("weird"), ".ai/harness.py")
+        self.assertEqual(pipeline.harness_script(None), ".ai/harness.py")
 
         self.assertTrue(pipeline.supports_deep_thinking("full"))
         self.assertFalse(pipeline.supports_deep_thinking("fast"))
@@ -115,6 +116,7 @@ class PipelineRegistryTests(unittest.TestCase):
         self.assertIsNone(harness.FIX_STAGE)
         self.assertIsNone(harness.DOCUMENT_STAGE)
         self.assertEqual(harness.PRESETS_DIR.name, "fast")
+        self.assertEqual(harness.PRESETS_DIR.parent, harness.AI_DIR / "presets")
         self.assertEqual(harness.COMMIT_STAGES, set(harness.STAGES))
 
         harness.apply_pipeline("standard")
@@ -128,6 +130,7 @@ class PipelineRegistryTests(unittest.TestCase):
         self.assertEqual(harness.FIX_STAGE, "03_fix")
         self.assertIsNone(harness.DOCUMENT_STAGE)
         self.assertEqual(harness.PRESETS_DIR.name, "standard")
+        self.assertEqual(harness.PRESETS_DIR.parent, harness.AI_DIR / "presets")
 
         harness.apply_pipeline("full")
         self.assertEqual(harness.PIPELINE_MODE, "full")

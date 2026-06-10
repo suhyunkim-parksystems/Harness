@@ -4,19 +4,19 @@ role: "fast_implementation"
 preferred_model: "Claude"
 model_policy: "preferred_not_hard_block"
 required_inputs:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 optional_inputs:
-  - ".ai/features/[기능명]/02_verify.md"
-  - ".ai/runs/[기능명]/verification/latest.json"
+  - ".project/features/[기능명]/02_verify.md"
+  - ".project/runs/[기능명]/verification/latest.json"
 outputs:
-  - ".ai/features/[기능명]/01_dev.md"
+  - ".project/features/[기능명]/01_dev.md"
 allowed_writes:
   - "production_code"
   - "tests"
-  - ".ai/features/[기능명]/01_dev.md"
+  - ".project/features/[기능명]/01_dev.md"
 forbidden_writes:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/02_verify.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/02_verify.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 retry_commit_policy: "amend_existing_stage_01"
@@ -40,7 +40,7 @@ default_next_stage: "02_verify"
 - 다른 모델이 이 단계를 실행하더라도 중지하지 않는다.
 - 담당 모델이 권장 모델과 다르면 `01_dev.md`의 `## 단계 결과`에 `model_mismatch: true`와 실제 실행 모델을 기록한다.
 - 이 단계는 fast `00_spec.md`를 기준으로 코드를 구현하고 필요한 테스트를 추가하는 단계이다.
-- `02_verify` 실패 후 재진입한 경우, `02_verify.md`와 `.ai/runs/[기능명]/verification/latest.json`을 읽고 실패 원인을 우선 처리한다.
+- `02_verify` 실패 후 재진입한 경우, `02_verify.md`와 `.project/runs/[기능명]/verification/latest.json`을 읽고 실패 원인을 우선 처리한다.
 - `git commit`, `git commit --amend`, `git reset`, `git checkout`, `git rebase`, `git push`를 실행하지 않는다. 실제 커밋과 amend는 하네스가 처리한다.
 
 ---
@@ -54,14 +54,14 @@ default_next_stage: "02_verify"
 
 ## 작업 순서
 
-1. `.ai/features/[기능명]/00_spec.md`의 목표, acceptance criteria, 구현 계획, 검증 계획을 읽는다.
+1. `.project/features/[기능명]/00_spec.md`의 목표, acceptance criteria, 구현 계획, 검증 계획을 읽는다.
 2. `risk_level: high` 또는 `fast_pipeline_allowed: false`이면 구현하지 말고 `status: NEEDS_USER` 또는 `FAIL`로 멈춘다.
 3. 이전 `02_verify.md` 또는 하네스 검증 JSON이 있으면 실패 항목을 확인한다.
 4. `00_spec.md`의 호환성 위험과 유지 전략을 확인한다.
 5. 기존 코드 패턴을 따라 구현한다.
 6. 필요한 테스트를 추가하거나 수정한다. 기존 테스트를 삭제하거나 비활성화하지 않는다.
 7. 가능한 테스트/빌드 명령을 실행한다.
-8. `.ai/features/[기능명]/01_dev.md`에 결과를 짧게 기록한다.
+8. `.project/features/[기능명]/01_dev.md`에 결과를 짧게 기록한다.
 9. 최초 실행이면 하네스가 `01_develop` 커밋을 만들 수 있게 워킹트리를 커밋 가능한 상태로 둔다.
 10. verify 실패 후 재진입이면 하네스가 기존 `01_develop` 커밋을 amend할 수 있게 변경을 남기고 `commit_mode_suggestion: amend_existing_01`을 기록한다.
 
@@ -133,7 +133,7 @@ default_next_stage: "02_verify"
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/01_dev.md
+  - .project/features/[기능명]/01_dev.md
 - changed_files:
 - harness_commit_required: true
 - commit_created_by_model: false

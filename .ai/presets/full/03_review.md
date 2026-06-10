@@ -4,19 +4,19 @@ role: "code_review"
 preferred_model: "Antigravity"
 model_policy: "preferred_not_hard_block"
 required_inputs:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_plan.md"
-  - ".ai/features/[기능명]/02_dev.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/02_dev.md"
 outputs:
-  - ".ai/features/[기능명]/03_review.md"
+  - ".project/features/[기능명]/03_review.md"
 allowed_writes:
-  - ".ai/features/[기능명]/03_review.md"
+  - ".project/features/[기능명]/03_review.md"
 forbidden_writes:
   - "production_code"
   - "tests"
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_plan.md"
-  - ".ai/features/[기능명]/02_dev.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/02_dev.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 commit_owner: "harness"
@@ -61,9 +61,9 @@ default_next_stage: "04_fix"
 ## 작업 순서
 
 1. 요청사항이 리뷰 불가능할 정도로 모호한 경우에만 `status: NEEDS_USER`로 멈춘다.
-2. `.ai/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 위험도를 파악한다.
-3. `.ai/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 위험 구간, 의존성, 테스트 전략을 파악한다.
-4. `.ai/features/[기능명]/02_dev.md`를 읽고 기능 목표, 구현 의도, Git 정보를 파악한다.
+2. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 위험도를 파악한다.
+3. `.project/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 위험 구간, 의존성, 테스트 전략을 파악한다.
+4. `.project/features/[기능명]/02_dev.md`를 읽고 기능 목표, 구현 의도, Git 정보를 파악한다.
 5. 실제 변경 diff를 확인한다.
    - `02_dev.md`의 `diff_command`가 있으면 우선 사용한다.
    - `02_dev.md`의 `review_diff_command`가 있으면 우선 사용한다.
@@ -73,7 +73,7 @@ default_next_stage: "04_fix"
    - 어느 것도 불가능하면 `status: FAIL`로 기록하고 이유를 남긴다.
 6. 아래 리뷰 관점에 따라 코드를 검토한다.
 7. 지적 사항은 `BLOCKER / MAJOR / MINOR / NIT` severity로 분류한다.
-8. 리뷰 결과를 `.ai/features/[기능명]/03_review.md`에 작성한다.
+8. 리뷰 결과를 `.project/features/[기능명]/03_review.md`에 작성한다.
 
 ---
 
@@ -161,7 +161,7 @@ default_next_stage: "04_fix"
 
 ## 기록 양식
 
-리뷰 완료 후 `.ai/features/[기능명]/03_review.md`에 아래 형식으로 작성한다.
+리뷰 완료 후 `.project/features/[기능명]/03_review.md`에 아래 형식으로 작성한다.
 
 ```markdown
 # 03_review - [기능명]
@@ -236,7 +236,7 @@ default_next_stage: "04_fix"
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/03_review.md
+  - .project/features/[기능명]/03_review.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false

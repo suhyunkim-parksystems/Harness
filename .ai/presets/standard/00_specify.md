@@ -8,9 +8,9 @@ required_inputs:
 optional_inputs:
   - "existing_codebase"
 outputs:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 allowed_writes:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 forbidden_writes:
   - "production_code"
   - "tests"
@@ -60,7 +60,7 @@ default_next_stage: "01_develop"
 6. 데이터/제어 흐름과 구현 순서를 간단하지만 실행 가능한 수준으로 작성한다.
 7. 테스트/검증 계획을 정상 경로, 오류 경로, 엣지 케이스로 나눠 작성한다.
 8. 위험도를 판단하고 fast/standard/full 중 standard가 적합한지 기록한다.
-9. `.ai/features/[기능명]/00_spec.md`에 결과를 기록한다.
+9. `.project/features/[기능명]/00_spec.md`에 결과를 기록한다.
 
 ---
 
@@ -77,7 +77,7 @@ standard 파이프라인은 `low`와 `medium` risk를 기본 대상으로 한다
 
 ## 사용자 판단 요청 형식
 
-질문이 필요하면 `.ai/features/[기능명]/00_spec.md`에 아래 형식만 작성하고 멈춘다.
+질문이 필요하면 `.project/features/[기능명]/00_spec.md`에 아래 형식만 작성하고 멈춘다.
 
 ```markdown
 # 00_spec - [기능명]
@@ -99,7 +99,7 @@ standard 파이프라인은 `low`와 `medium` risk를 기본 대상으로 한다
 - blocking_reason:
 - risk_level:
 - produced_files:
-  - .ai/features/[기능명]/00_spec.md
+  - .project/features/[기능명]/00_spec.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false
@@ -172,7 +172,7 @@ standard 파이프라인은 `low`와 `medium` risk를 기본 대상으로 한다
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/00_spec.md
+  - .project/features/[기능명]/00_spec.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .context import HarnessRuntime
+
 import json
 import shutil
 from pathlib import Path
@@ -20,11 +25,57 @@ from harness_core.questions import (
 DEFAULT_MAX_VERIFY_FIX_RETRIES = 3
 
 
-def complete_run(ctx, state: dict[str, Any], stage: str) -> dict[str, Any]:
+def _record_merge_preview(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> None:
+    """Predict -- without merging -- whether the run branch merges cleanly into
+    its base, and record the verdict on the state so the human knows before they
+    act. Pure preview: never mutates git, never raises out to fail the run."""
+    base = state.get("base_branch")
+    run_branch = state.get("run_branch")
+    if not base or not run_branch:
+        return  # linear run (no branch created) -- nothing to preview
+    if not callable(getattr(ctx, "merge_tree_conflicts", None)):
+        return
+    try:
+        conflicts = ctx.merge_tree_conflicts(base, run_branch)
+    except Exception as exc:  # pragma: no cover - defensive; preview must not fail a run
+        ctx.log_event(state, "merge_preview_failed", f"merge preview failed: {exc}", stage=stage)
+        return
+    if conflicts is None:
+        state["merge_ready"] = None
+        state["merge_conflicts"] = None
+        ctx.log_event(
+            state,
+            "merge_preview_unknown",
+            f"{run_branch} -> {base}: merge 가능여부 판단 불가 (git 2.38+ 필요)",
+            stage=stage,
+        )
+        return
+    state["merge_ready"] = len(conflicts) == 0
+    state["merge_conflicts"] = conflicts
+    if conflicts:
+        ctx.log_event(
+            state,
+            "merge_preview_conflicts",
+            f"{run_branch} -> {base}: merge 충돌 {len(conflicts)}건 — 직접 해결 필요",
+            stage=stage,
+            conflicts=",".join(conflicts),
+        )
+    else:
+        ctx.log_event(
+            state,
+            "merge_preview_clean",
+            f"{run_branch} -> {base}: 깨끗하게 merge 가능. "
+            f"`git checkout {base} && git merge --no-ff {run_branch}`",
+            stage=stage,
+        )
+
+
+def complete_run(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> dict[str, Any]:
     state["status"] = RunStatus.COMPLETE
     state["current_stage"] = "done"
     state.pop("blocked", None)
     ctx.log_event(state, "complete", "run complete", stage=stage)
+    _record_merge_preview(ctx, state, stage)
     ctx.save_state(state)
     try:
         history_result = ctx.record_project_history(state)
@@ -49,7 +100,7 @@ def complete_run(ctx, state: dict[str, Any], stage: str) -> dict[str, Any]:
     return state
 
 
-def finish_pc_candidate_extraction(ctx, state: dict[str, Any]) -> dict[str, Any]:
+def finish_pc_candidate_extraction(ctx: HarnessRuntime, state: dict[str, Any]) -> dict[str, Any]:
     source_stage = str(state.get("pc_candidate_source_stage") or ctx.VERIFY_STAGE)
     try:
         extraction = ctx.extract_project_contract_candidates(state)
@@ -87,7 +138,7 @@ def finish_pc_candidate_extraction(ctx, state: dict[str, Any]) -> dict[str, Any]
     return complete_run(ctx, state, source_stage)
 
 
-def maybe_rename_feature(ctx, state: dict[str, Any]) -> dict[str, Any]:
+def maybe_rename_feature(ctx: HarnessRuntime, state: dict[str, Any]) -> dict[str, Any]:
     old = state["feature_name"]
     if state.get("feature_name_locked"):
         return state
@@ -141,7 +192,7 @@ def maybe_rename_feature(ctx, state: dict[str, Any]) -> dict[str, Any]:
 
 
 def apply_decision_mode(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     *,
     defaults: bool = False,
     interactive: bool = False,
@@ -177,7 +228,7 @@ def apply_decision_mode(
     return state
 
 
-def _stage_result_status_from_files(ctx, feature: str, stage: str) -> str:
+def _stage_result_status_from_files(ctx: HarnessRuntime, feature: str, stage: str) -> str:
     try:
         result_json = ctx.stage_result_json_path(feature, stage)
         if result_json.exists():
@@ -191,7 +242,7 @@ def _stage_result_status_from_files(ctx, feature: str, stage: str) -> str:
 
 
 def auto_drive(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     yes: bool,
     timeout_seconds: int,
     max_steps: int,
@@ -260,7 +311,7 @@ def auto_drive(
 
 
 def step_run(
-    ctx, feature: str,
+    ctx: HarnessRuntime, feature: str,
     yes: bool,
     defaults: bool,
     interactive: bool,
@@ -323,31 +374,31 @@ def step_run(
     raise HarnessError(f"Cannot step run in status={state.get('status')!r}")
 
 
-def safe_git_head(ctx) -> str:
+def safe_git_head(ctx: HarnessRuntime) -> str:
     try:
         return ctx.git_head()
     except Exception:
         return ""
 
 
-def filtered_changed_paths(ctx, state: dict[str, Any], stage: str) -> list[str]:
+def filtered_changed_paths(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> list[str]:
     baseline = set(state.get("baseline_dirty", []))
     feature = state["feature_name"]
     paths = []
     for path in ctx.git_changed_paths():
         if path in baseline:
             continue
-        if path.startswith(".ai/runs/"):
+        if path.startswith(".project/runs/"):
             continue
-        if stage == ctx.VERIFY_RETRY_TARGET_STAGE and path == f".ai/features/{feature}/{ctx.STAGE_OUTPUTS[ctx.VERIFY_STAGE]}":
+        if stage == ctx.VERIFY_RETRY_TARGET_STAGE and path == f".project/features/{feature}/{ctx.STAGE_OUTPUTS[ctx.VERIFY_STAGE]}":
             continue
-        if path.startswith(".ai/docs/") and stage != ctx.DOCUMENT_STAGE:
+        if path.startswith(".project/docs/") and stage != ctx.DOCUMENT_STAGE:
             continue
         paths.append(path)
     return sorted(set(paths))
 
 
-def _run_start_dirty_paths(ctx) -> list[str]:
+def _run_start_dirty_paths(ctx: HarnessRuntime) -> list[str]:
     paths: list[str] = []
     for path in ctx.git_changed_paths():
         normalized = str(path).replace("\\", "/")
@@ -387,8 +438,8 @@ def _format_run_start_dirty_message(paths: list[str]) -> str:
             "     git stash push -u -- src tests",
             "  4. If these changes belong to an incomplete harness run, finish that run with resume/retry",
             "     instead of starting a new run:",
-            "     python .ai\\harness.py todo",
-            "     python .ai\\harness.py resume <feature> --auto --yes --defaults",
+            "     python .ai/harness.py todo",
+            "     python .ai/harness.py resume <feature> --auto --yes --defaults",
             "  5. If the changes are disposable, clean them up explicitly, then start the run again.",
             "",
             "After one of the above actions, rerun your original harness command.",
@@ -399,13 +450,13 @@ def _format_run_start_dirty_message(paths: list[str]) -> str:
     return "\n".join(lines)
 
 
-def assert_clean_run_start_paths(ctx) -> None:
+def assert_clean_run_start_paths(ctx: HarnessRuntime) -> None:
     paths = _run_start_dirty_paths(ctx)
     if paths:
         raise HarnessError(_format_run_start_dirty_message(paths))
 
 
-def commit_for_stage(ctx, state: dict[str, Any], stage: str, result: dict[str, Any]) -> None:
+def commit_for_stage(ctx: HarnessRuntime, state: dict[str, Any], stage: str, result: dict[str, Any]) -> None:
     if stage in ctx.NO_COMMIT_STAGES:
         ctx.log_event(state, "commit_skipped", "stage does not commit", stage=stage)
         return
@@ -464,8 +515,29 @@ def commit_for_stage(ctx, state: dict[str, Any], stage: str, result: dict[str, A
     ctx.save_state(state)
 
 
+def prepare_run_branch(ctx: HarnessRuntime, feature: str) -> tuple[str | None, str | None]:
+    """Create and check out a per-run branch off the current branch.
+
+    Returns ``(base_branch, run_branch)``. Branching from the current HEAD keeps
+    the same SHA, so it never trips the provider HEAD-change guard. Falls back to
+    ``(None, None)`` -- plain linear behavior on the current branch -- whenever
+    branching is not possible: a detached/unknown HEAD, or a context without git
+    wired up (e.g. partial unit-test contexts whose ``current_branch`` is unset).
+    """
+    if not callable(getattr(ctx, "current_branch", None)):
+        return None, None
+    base = ctx.current_branch()
+    if not base or base == "HEAD":
+        return None, None
+    run_branch = f"run/{feature}"
+    if ctx.branch_exists(run_branch):
+        run_branch = f"run/{feature}-{ctx.now_stamp()}"
+    ctx.checkout_new_branch(run_branch)
+    return base, run_branch
+
+
 def create_run(
-    ctx, request: str,
+    ctx: HarnessRuntime, request: str,
     feature: str | None,
     defaults_mode: bool = False,
     interactive_mode: bool = False,
@@ -479,7 +551,7 @@ def create_run(
     if deep_thinking:
         ctx.validate_deep_thinking_ready()
     ctx.warn_pending_pc_candidates_for_new_run()
-    ctx.assert_no_unpushed_commits_for_new_run()
+    ctx.assert_prev_run_branch_merged()
     ctx.assert_no_incomplete_runs_for_new_run()
     assert_clean_run_start_paths(ctx)
     ctx.ensure_dirs()
@@ -493,6 +565,7 @@ def create_run(
         raise HarnessError(f"Run already exists: {feature}")
 
     ctx.feature_dir(feature).mkdir(parents=True, exist_ok=True)
+    base_branch, run_branch = prepare_run_branch(ctx, feature)
     state = {
         "feature_name": feature,
         "feature_name_locked": feature_name_locked,
@@ -508,6 +581,8 @@ def create_run(
         "status": RunStatus.CREATED,
         "created_at": ctx.iso_now(),
         "updated_at": ctx.iso_now(),
+        "base_branch": base_branch,
+        "run_branch": run_branch,
         "baseline_dirty": ctx.git_changed_paths(),
         "attempts": {},
         "commits": {},
@@ -527,6 +602,14 @@ def create_run(
         interactive_mode=interactive_mode,
         deep_thinking=bool(deep_thinking),
     )
+    if run_branch:
+        ctx.log_event(
+            state,
+            "run_branch_created",
+            f"created run branch {run_branch} off {base_branch}",
+            run_branch=run_branch,
+            base_branch=base_branch,
+        )
     ctx.log_event(
         state,
         "provider_schedule_created",
@@ -537,7 +620,7 @@ def create_run(
     return state
 
 
-def apply_runtime_performance(ctx, state: dict[str, Any], performance: Any | None) -> dict[str, Any]:
+def apply_runtime_performance(ctx: HarnessRuntime, state: dict[str, Any], performance: Any | None) -> dict[str, Any]:
     if performance is None:
         return state
     performance_name = ctx.normalize_performance(performance)
@@ -556,7 +639,7 @@ def apply_runtime_performance(ctx, state: dict[str, Any], performance: Any | Non
 
 
 def latest_provider_artifacts(
-    ctx, feature: str,
+    ctx: HarnessRuntime, feature: str,
     stage: str,
     state: dict[str, Any] | None = None,
 ) -> dict[str, str]:
@@ -578,11 +661,11 @@ def latest_provider_artifacts(
     return artifacts
 
 
-def handoff_path(ctx, feature: str) -> Path:
+def handoff_path(ctx: HarnessRuntime, feature: str) -> Path:
     return ctx.run_dir(feature) / "handoff.md"
 
 
-def safe_read_tail(ctx, path: Path, lines: int = 40, max_chars: int = 6000) -> str:
+def safe_read_tail(ctx: HarnessRuntime, path: Path, lines: int = 40, max_chars: int = 6000) -> str:
     if not path.exists():
         return ""
     try:
@@ -595,18 +678,15 @@ def safe_read_tail(ctx, path: Path, lines: int = 40, max_chars: int = 6000) -> s
     return text
 
 
-def latest_verification_summary(ctx, feature: str) -> dict[str, Any] | None:
+def latest_verification_summary(ctx: HarnessRuntime, feature: str) -> dict[str, Any] | None:
     path = ctx.latest_verification_result_path(feature)
     if not path.exists():
         return None
-    try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
+    parsed = ctx.read_json_file(path, None)
     return parsed if isinstance(parsed, dict) else None
 
 
-def recent_events(ctx, state: dict[str, Any], limit: int = 8) -> list[dict[str, Any]]:
+def recent_events(ctx: HarnessRuntime, state: dict[str, Any], limit: int = 8) -> list[dict[str, Any]]:
     events = state.get("events", [])
     if not isinstance(events, list):
         return []
@@ -614,7 +694,7 @@ def recent_events(ctx, state: dict[str, Any], limit: int = 8) -> list[dict[str, 
 
 
 def write_handoff(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     reason: str,
     *,
     stage: str | None = None,
@@ -724,7 +804,7 @@ def write_handoff(
 
 
 def missing_stage_output_message(
-    ctx, feature: str,
+    ctx: HarnessRuntime, feature: str,
     stage: str,
     output: Path,
     state: dict[str, Any] | None = None,
@@ -764,7 +844,7 @@ def missing_stage_output_message(
 
 
 def load_stage_result(
-    ctx, feature: str,
+    ctx: HarnessRuntime, feature: str,
     stage: str,
     state: dict[str, Any] | None = None,
 ) -> tuple[Path, str, dict[str, Any]]:
@@ -832,15 +912,15 @@ def load_stage_result(
     return output, text, result
 
 
-def expected_docx_path(ctx, feature: str) -> Path:
+def expected_docx_path(ctx: HarnessRuntime, feature: str) -> Path:
     return ctx.DOCS_DIR / f"{feature}_명세서.docx"
 
 
-def validate_document_stage_artifacts(ctx, feature: str) -> str | None:
+def validate_document_stage_artifacts(ctx: HarnessRuntime, feature: str) -> str | None:
     return ctx.validate_docx_file(expected_docx_path(ctx, feature))
 
 
-def block_state(ctx, state: dict[str, Any], stage: str, reason: str, next_stage: str | None = None) -> None:
+def block_state(ctx: HarnessRuntime, state: dict[str, Any], stage: str, reason: str, next_stage: str | None = None) -> None:
     state["status"] = RunStatus.BLOCKED
     state["blocked"] = {"stage": stage, "reason": reason, "next_stage": next_stage}
     write_handoff(ctx, 
@@ -853,12 +933,12 @@ def block_state(ctx, state: dict[str, Any], stage: str, reason: str, next_stage:
     ctx.save_state(state)
 
 
-def _interactive_answer_path(ctx, feature: str, stage: str, attempt: int) -> Path:
+def _interactive_answer_path(ctx: HarnessRuntime, feature: str, stage: str, attempt: int) -> Path:
     return ctx.run_dir(feature) / "questions" / f"{stage}_attempt{attempt}_{ctx.now_stamp()}.json"
 
 
 def _record_interactive_answers(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     stage: str,
     result: dict[str, Any],
     questions: list[dict[str, Any]],
@@ -893,7 +973,7 @@ def _record_interactive_answers(
     return record, path
 
 
-def _interactive_retry_context(ctx, record: dict[str, Any], answer_path: Path) -> str:
+def _interactive_retry_context(ctx: HarnessRuntime, record: dict[str, Any], answer_path: Path) -> str:
     return "\n".join(
         [
             "This is an interactive retry of the current stage.",
@@ -905,7 +985,7 @@ def _interactive_retry_context(ctx, record: dict[str, Any], answer_path: Path) -
 
 
 def _handle_interactive_needs_user(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     stage: str,
     result: dict[str, Any],
 ) -> dict[str, Any]:
@@ -932,7 +1012,7 @@ def _handle_interactive_needs_user(
     return state
 
 
-def failed_verification_checks(ctx, result: dict[str, Any]) -> str | None:
+def failed_verification_checks(ctx: HarnessRuntime, result: dict[str, Any]) -> str | None:
     checks: list[str] = []
     verification_summary = result.get("verification_summary")
     if isinstance(verification_summary, dict):
@@ -953,12 +1033,12 @@ def failed_verification_checks(ctx, result: dict[str, Any]) -> str | None:
     return "; ".join(checks) if checks else None
 
 
-def _final_pipeline_stage(ctx) -> str:
+def _final_pipeline_stage(ctx: HarnessRuntime) -> str:
     stages = list(ctx.STAGES)
     return str(stages[-1]) if stages else ""
 
 
-def _sequential_next_stage(ctx, stage: str) -> str | None:
+def _sequential_next_stage(ctx: HarnessRuntime, stage: str) -> str | None:
     stages = list(ctx.STAGES)
     try:
         index = stages.index(stage)
@@ -970,7 +1050,7 @@ def _sequential_next_stage(ctx, stage: str) -> str | None:
 
 
 def _correct_non_final_done_next_stage(
-    ctx,
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     stage: str,
     next_stage: str,
@@ -997,7 +1077,7 @@ def _correct_non_final_done_next_stage(
     return corrected_next_stage
 
 
-def resume_run(ctx, feature: str, max_verify_fix_retries: int = DEFAULT_MAX_VERIFY_FIX_RETRIES) -> dict[str, Any]:
+def resume_run(ctx: HarnessRuntime, feature: str, max_verify_fix_retries: int = DEFAULT_MAX_VERIFY_FIX_RETRIES) -> dict[str, Any]:
     state = ctx.load_state(feature)
     if max_verify_fix_retries < 0:
         raise HarnessError("max_verify_fix_retries must be zero or greater.")
@@ -1139,7 +1219,7 @@ def resume_run(ctx, feature: str, max_verify_fix_retries: int = DEFAULT_MAX_VERI
     return state
 
 
-def approve_run(ctx, feature: str, max_verify_fix_retries: int = DEFAULT_MAX_VERIFY_FIX_RETRIES) -> dict[str, Any]:
+def approve_run(ctx: HarnessRuntime, feature: str, max_verify_fix_retries: int = DEFAULT_MAX_VERIFY_FIX_RETRIES) -> dict[str, Any]:
     state = ctx.load_state(feature)
     blocked = state.get("blocked")
     if not blocked:
@@ -1159,9 +1239,10 @@ def approve_run(ctx, feature: str, max_verify_fix_retries: int = DEFAULT_MAX_VER
     return resume_run(ctx, state["feature_name"], max_verify_fix_retries=max_verify_fix_retries)
 
 
-def build_retry_context(ctx, state: dict[str, Any], stage: str) -> str:
+def build_retry_context(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> str:
     feature = state["feature_name"]
-    blocked = state.get("blocked") if isinstance(state.get("blocked"), dict) else {}
+    raw_blocked = state.get("blocked")
+    blocked = raw_blocked if isinstance(raw_blocked, dict) else {}
     reason = str(blocked.get("reason") or "Manual retry requested.")
     handoff = write_handoff(ctx, 
         state,
@@ -1200,7 +1281,7 @@ def build_retry_context(ctx, state: dict[str, Any], stage: str) -> str:
     return "\n".join(parts)
 
 
-def copy_same_prompt_for_retry(ctx, state: dict[str, Any], stage: str) -> Path:
+def copy_same_prompt_for_retry(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> Path:
     current_prompt = state.get("current_prompt")
     if not current_prompt:
         return ctx.generate_prompt(state, stage)
@@ -1220,7 +1301,7 @@ def copy_same_prompt_for_retry(ctx, state: dict[str, Any], stage: str) -> Path:
     return path
 
 
-def archive_stage_outputs_for_retry(ctx, state: dict[str, Any], stage: str) -> None:
+def archive_stage_outputs_for_retry(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> None:
     feature = state["feature_name"]
     archive_dir = ctx.run_dir(feature) / "retry_archives"
     archive_dir.mkdir(parents=True, exist_ok=True)
@@ -1248,7 +1329,7 @@ def archive_stage_outputs_for_retry(ctx, state: dict[str, Any], stage: str) -> N
 
 
 def retry_run(
-    ctx, feature: str,
+    ctx: HarnessRuntime, feature: str,
     *,
     same: bool,
     prompt_only: bool,
@@ -1267,7 +1348,8 @@ def retry_run(
         interactive=interactive,
         reason="decision mode enabled before retry",
     )
-    blocked = state.get("blocked") if isinstance(state.get("blocked"), dict) else {}
+    raw_blocked = state.get("blocked")
+    blocked = raw_blocked if isinstance(raw_blocked, dict) else {}
     stage = str(blocked.get("stage") or state.get("current_stage") or "")
     if stage not in ctx.STAGES:
         raise HarnessError(f"Cannot retry stage: {stage!r}")

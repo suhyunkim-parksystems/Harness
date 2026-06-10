@@ -114,7 +114,8 @@ def _default_choice_index(question: dict[str, Any]) -> int | None:
     default = _as_text(question.get("default"))
     if not default:
         return None
-    options = question.get("options") if isinstance(question.get("options"), list) else []
+    raw_options = question.get("options")
+    options = raw_options if isinstance(raw_options, list) else []
     if default.isdigit():
         index = int(default) - 1
         if 0 <= index < len(options):
@@ -139,7 +140,8 @@ def _default_yes_no(question: dict[str, Any]) -> bool | None:
 
 def _print_choice_question(output_fn: Callable[[str], None], question: dict[str, Any]) -> None:
     output_fn(question["question"])
-    options = question.get("options") if isinstance(question.get("options"), list) else []
+    raw_options = question.get("options")
+    options = raw_options if isinstance(raw_options, list) else []
     for index, option in enumerate(options, start=1):
         line = f"  {index}. {option['label']}"
         if option.get("description"):
@@ -152,7 +154,8 @@ def _choice_answer(
     input_fn: Callable[[str], str],
     output_fn: Callable[[str], None],
 ) -> dict[str, Any]:
-    options = question.get("options") if isinstance(question.get("options"), list) else []
+    raw_options = question.get("options")
+    options = raw_options if isinstance(raw_options, list) else []
     default_index = _default_choice_index(question)
     while True:
         suffix = f" [{default_index + 1}]" if default_index is not None else ""

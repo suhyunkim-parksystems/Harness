@@ -4,18 +4,18 @@ role: "standard_implementation"
 preferred_model: "Claude"
 model_policy: "preferred_not_hard_block"
 required_inputs:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 outputs:
-  - ".ai/features/[기능명]/01_dev.md"
+  - ".project/features/[기능명]/01_dev.md"
 allowed_writes:
   - "production_code"
   - "tests"
-  - ".ai/features/[기능명]/01_dev.md"
+  - ".project/features/[기능명]/01_dev.md"
 forbidden_writes:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/02_review.md"
-  - ".ai/features/[기능명]/03_fix.md"
-  - ".ai/features/[기능명]/04_verify.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/02_review.md"
+  - ".project/features/[기능명]/03_fix.md"
+  - ".project/features/[기능명]/04_verify.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 commit_owner: "harness"
@@ -51,14 +51,14 @@ default_next_stage: "02_review"
 
 ## 작업 순서
 
-1. `.ai/features/[기능명]/00_spec.md`의 목표, acceptance criteria, 제외 범위, 구현 계획, 검증 계획을 읽는다.
+1. `.project/features/[기능명]/00_spec.md`의 목표, acceptance criteria, 제외 범위, 구현 계획, 검증 계획을 읽는다.
 2. `risk_level: high` 또는 `standard_pipeline_allowed: false`이면 구현하지 말고 `status: NEEDS_USER` 또는 `FAIL`로 멈춘다.
 3. `00_spec.md`의 호환성 위험과 유지 전략을 확인한다.
 4. 기존 코드 패턴을 따라 구현한다.
 5. 필요한 테스트를 추가하거나 수정한다. 기존 테스트를 삭제하거나 비활성화하지 않는다.
 6. 가능한 테스트/빌드 명령을 실행한다.
 7. 계획과 달라진 점이 있으면 이유를 기록한다.
-8. `.ai/features/[기능명]/01_dev.md`에 결과를 기록한다.
+8. `.project/features/[기능명]/01_dev.md`에 결과를 기록한다.
 9. 하네스가 `01_develop` 커밋을 만들 수 있게 워킹트리를 커밋 가능한 상태로 둔다.
 
 ---
@@ -128,7 +128,7 @@ default_next_stage: "02_review"
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/01_dev.md
+  - .project/features/[기능명]/01_dev.md
 - changed_files:
 - harness_commit_required: true
 - commit_created_by_model: false

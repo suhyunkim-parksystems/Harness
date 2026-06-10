@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,7 @@ from support import ensure_ai_path
 
 ensure_ai_path()
 
-from harness_core import verification  # noqa: E402
+from harness_core import providers, verification  # noqa: E402
 from harness_core.context import HarnessContext  # noqa: E402
 
 
@@ -108,7 +109,7 @@ class VerificationSelfTests(unittest.TestCase):
             "run_harness_verification": lambda state, stage_result: {
                 "passed": False,
                 "status": "FAIL",
-                "path": ".ai/runs/demo/verification/latest.json",
+                "path": ".project/runs/demo/verification/latest.json",
             },
         })
 
@@ -125,6 +126,91 @@ class VerificationSelfTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertFalse(result["harness_commit_required"])
         self.assertIn("Harness verification failed", result["blocking_reason"])
+
+    def test_config_merge_appends_project_verification_commands(self) -> None:
+        merged = providers.merge_config(
+            {
+                "verification": {
+                    "enabled": True,
+                    "commands": [
+                        {
+                            "name": "generic",
+                            "command": ["python", "-m", "py_compile", ".ai\\harness.py"],
+                        },
+                        {
+                            "name": "duplicate-from-ai",
+                            "command": ["dotnet", "test", "tests\\A.csproj"],
+                            "cwd": ".",
+                        },
+                    ],
+                }
+            },
+            {
+                "verification": {
+                    "commands": [
+                        {
+                            "name": "duplicate-from-project",
+                            "command": ["dotnet", "test", "tests\\A.csproj"],
+                            "cwd": ".",
+                        },
+                        {
+                            "name": "project",
+                            "command": ["dotnet", "test", "tests\\B.csproj"],
+                            "cwd": ".",
+                        },
+                    ]
+                }
+            },
+        )
+
+        names = [item["name"] for item in merged["verification"]["commands"]]
+        self.assertEqual(names, ["generic", "duplicate-from-ai", "project"])
+
+    def test_promoted_dynamic_commands_are_written_to_project_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project_config_path = root / ".project" / "harness.config.json"
+
+            def load_project_config() -> dict[str, Any]:
+                if not project_config_path.exists():
+                    return {}
+                return json.loads(project_config_path.read_text(encoding="utf-8"))
+
+            def write_project_config(config: dict[str, Any]) -> None:
+                project_config_path.parent.mkdir(parents=True, exist_ok=True)
+                project_config_path.write_text(
+                    json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+
+            command = ["python", "-m", "pytest", "tests"]
+            ctx = HarnessContext.from_namespace({
+                "ROOT": root,
+                "DEFAULT_VERIFY_COMMAND_TIMEOUT_SECONDS": 600,
+                "load_config": lambda: {"verification": {"timeout_seconds": 600, "commands": []}},
+                "load_project_config": load_project_config,
+                "write_project_config": write_project_config,
+                "project_config_path": lambda: project_config_path,
+                "configured_verification_commands": lambda feature: ([], True),
+            })
+            specs = [
+                {
+                    "name": "unit-tests",
+                    "raw_command": command,
+                    "cwd": root,
+                    "config_cwd": ".",
+                    "timeout_seconds": 600,
+                    "persist": True,
+                    "identity": verification._command_identity(command, root),
+                }
+            ]
+
+            promoted = verification.promote_dynamic_verification_commands(ctx, "demo", specs)
+
+            self.assertEqual(len(promoted), 1)
+            saved = load_project_config()
+            self.assertEqual(saved["verification"]["commands"][0]["name"], "unit-tests")
+            self.assertEqual(saved["verification"]["commands"][0]["command"], command)
 
 
 if __name__ == "__main__":

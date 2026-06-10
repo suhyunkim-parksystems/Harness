@@ -7,15 +7,47 @@ import os
 import re
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
 
 
-NEXT_STAGE = {
-    "00_specify": "01_develop",
-    "01_develop": "02_review",
-    "02_review": "03_fix",
-    "03_fix": "04_verify",
+PIPELINES = {
+    "fast": {
+        "stages": ("00_specify", "01_develop", "02_verify"),
+        "develop_stage": "01_develop",
+        "verify_stage": "02_verify",
+        "verify_output": "02_verify.md",
+        "verify_retry_target": "01_develop",
+        "verify_pass_next": "done",
+        "document_stage": None,
+    },
+    "standard": {
+        "stages": ("00_specify", "01_develop", "02_review", "03_fix", "04_verify"),
+        "develop_stage": "01_develop",
+        "verify_stage": "04_verify",
+        "verify_output": "04_verify.md",
+        "verify_retry_target": "03_fix",
+        "verify_pass_next": "done",
+        "document_stage": None,
+    },
+    "full": {
+        "stages": (
+            "00_specify",
+            "01_plan",
+            "02_develop",
+            "03_review",
+            "04_fix",
+            "05_verify",
+            "06_document",
+        ),
+        "develop_stage": "02_develop",
+        "verify_stage": "05_verify",
+        "verify_output": "05_verify.md",
+        "verify_retry_target": "04_fix",
+        "verify_pass_next": "06_document",
+        "document_stage": "06_document",
+    },
 }
 
 
@@ -35,6 +67,35 @@ def read_json(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def infer_pipeline_mode(prompt: str, stage: str) -> str:
+    mode = prompt_value(prompt, "pipeline_mode").strip().lower()
+    if mode in PIPELINES:
+        return mode
+    for candidate, config in PIPELINES.items():
+        if stage in config["stages"]:
+            return candidate
+    return "standard"
+
+
+def next_stage_for(config: dict[str, Any], stage: str) -> str:
+    stages = list(config["stages"])
+    if stage == config["verify_stage"]:
+        return str(config["verify_pass_next"])
+    try:
+        index = stages.index(stage)
+    except ValueError:
+        return "done"
+    if index + 1 >= len(stages):
+        return "done"
+    return str(stages[index + 1])
+
+
+def prior_verify_result(feature: str, config: dict[str, Any]) -> dict[str, Any]:
+    output_name = str(config["verify_output"])
+    result_name = output_name.replace(".md", ".result.json")
+    return read_json(Path(".project") / "features" / feature / result_name)
 
 
 def history_notes(stage: str) -> dict[str, list[dict[str, str]]]:
@@ -87,6 +148,33 @@ def write_app(fixed: bool) -> None:
     )
 
 
+def write_minimal_docx(feature: str) -> Path:
+    path = Path(".project") / "docs" / f"{feature}_\uba85\uc138\uc11c.docx"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r>
+        <w:t>Harness integration selftest document.</w:t>
+      </w:r>
+    </w:p>
+  </w:body>
+</w:document>
+"""
+    content_types_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>
+"""
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types_xml)
+        zf.writestr("word/document.xml", document_xml)
+    return path
+
+
 def commit_provider_changes() -> bool:
     try:
         subprocess.run(["git", "add", "."], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -123,6 +211,12 @@ def run_stage(prompt: str) -> int:
     if not stage or not output_file or not result_json_file:
         print("fake provider could not find stage output paths in prompt", file=sys.stderr)
         return 2
+    pipeline_mode = infer_pipeline_mode(prompt, stage)
+    config = PIPELINES[pipeline_mode]
+    verify_stage = str(config["verify_stage"])
+    verify_retry_target = str(config["verify_retry_target"])
+    develop_stage = str(config["develop_stage"])
+    document_stage = str(config.get("document_stage") or "")
 
     if mode == "provider-nonzero" and stage == "00_specify":
         print("fake provider intentional non-zero exit", file=sys.stderr)
@@ -131,32 +225,42 @@ def run_stage(prompt: str) -> int:
     if mode == "provider-silent" and stage == "00_specify":
         return 0
 
-    if stage == "01_develop":
-        write_app(fixed=False)
-        result = stage_result(stage, "PASS", NEXT_STAGE[stage])
+    if stage == develop_stage:
+        prior_verify = prior_verify_result(feature, config)
+        retrying_after_verify_fail = str(prior_verify.get("status") or "").upper() == "FAIL"
+        fixed = retrying_after_verify_fail and mode != "verify-always-fail"
+        write_app(fixed=fixed)
+        result = stage_result(stage, "PASS", next_stage_for(config, stage))
         result["changed_files"] = ["src/app.py"]
-    elif stage == "03_fix":
-        prior_verify = read_json(Path(".ai") / "features" / feature / "04_verify.result.json")
+        if fixed:
+            result["history_notes"]["implemented"] = [{"title": "Applied retry fix after verify failure"}]
+    elif stage == verify_retry_target:
+        prior_verify = prior_verify_result(feature, config)
         if str(prior_verify.get("status") or "").upper() == "FAIL" and mode != "verify-always-fail":
             write_app(fixed=True)
-            result = stage_result(stage, "PASS", NEXT_STAGE[stage])
+            result = stage_result(stage, "PASS", next_stage_for(config, stage))
             result["changed_files"] = ["src/app.py"]
             result["history_notes"]["implemented"] = [{"title": "Applied retry fix after verify failure"}]
         else:
-            result = stage_result(stage, "PASS", NEXT_STAGE[stage])
+            result = stage_result(stage, "PASS", next_stage_for(config, stage))
             result["changed_files"] = []
-    elif stage == "04_verify":
+    elif stage == verify_stage:
         fixed = "FIXED = True" in (Path("src") / "app.py").read_text(encoding="utf-8", errors="replace")
         if fixed and mode != "verify-always-fail":
-            result = stage_result(stage, "PASS", "done")
+            result = stage_result(stage, "PASS", next_stage_for(config, stage))
             result["verification_summary"] = {"status": "PASS", "checked": ["src/app.py"]}
         else:
-            result = stage_result(stage, "FAIL", "03_fix", "Selftest app is intentionally not fixed yet.")
+            result = stage_result(stage, "FAIL", verify_retry_target, "Selftest app is intentionally not fixed yet.")
             result["harness_commit_required"] = False
             result["verification_summary"] = {"status": "FAIL", "failed": ["src/app.py"]}
             result["fix_inputs"] = {"items": ["Set FIXED = True in src/app.py"]}
+    elif stage == document_stage:
+        docx_path = write_minimal_docx(feature)
+        result = stage_result(stage, "PASS", next_stage_for(config, stage))
+        result["produced_files"] = [docx_path.as_posix()]
+        result["changed_files"] = [docx_path.as_posix()]
     else:
-        result = stage_result(stage, "PASS", NEXT_STAGE.get(stage, "done"))
+        result = stage_result(stage, "PASS", next_stage_for(config, stage))
         if stage == "00_specify":
             result["feature_name"] = feature
 

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .context import HarnessRuntime
+
 import concurrent.futures
 import json
 from pathlib import Path
@@ -25,7 +30,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "previous_candidate_max_chars": 60000,
     "common_instruction_lines": [
         "이 지시는 `01_plan` stage 내부에서만 사용하는 비공개 계획 지시다.",
-        "산출물의 형식과 언어는 기존 `presets/full/01_plan.md`를 따른다.",
+        "산출물의 형식과 언어는 기존 `.ai/presets/full/01_plan.md`를 따른다.",
         "`00_spec.md`를 임의로 변경하거나 확장하지 않는다.",
         "사용자 판단이 필요하면 일반 `01_plan`과 동일하게 `status: NEEDS_USER`를 기록한다.",
         "확정된 스펙을 구현 가능한 계획으로 더 잘 번역하는 것이 목적이다.",
@@ -211,7 +216,7 @@ def _as_lines(value: Any) -> list[str]:
     return str(value).splitlines()
 
 
-def _config(ctx) -> dict[str, Any]:
+def _config(ctx: HarnessRuntime) -> dict[str, Any]:
     loaded = ctx.load_config()
     raw = loaded.get("deep_thinking")
     if raw is None:
@@ -265,7 +270,7 @@ def _show_iteration_logs(config: dict[str, Any]) -> bool:
     return bool(config.get("show_iterations_in_user_output", True))
 
 
-def _available_plan_providers(ctx, config: dict[str, Any]) -> list[str]:
+def _available_plan_providers(ctx: HarnessRuntime, config: dict[str, Any]) -> list[str]:
     configured_order = _as_lines(config.get("provider_order"))
     order = ctx.ordered_unique([*configured_order, *ctx.known_provider_names()])
     result: list[str] = []
@@ -278,7 +283,7 @@ def _available_plan_providers(ctx, config: dict[str, Any]) -> list[str]:
     return ctx.ordered_unique(result)
 
 
-def validate_config_for_state(ctx, state: dict[str, Any] | None = None) -> dict[str, Any]:
+def validate_config_for_state(ctx: HarnessRuntime, state: dict[str, Any] | None = None) -> dict[str, Any]:
     config = _config(ctx)
     if not pipeline.supports_deep_thinking(ctx.PIPELINE_MODE):
         raise HarnessError("--deep-thinking is only available for the full pipeline.")
@@ -301,7 +306,7 @@ def validate_config_for_state(ctx, state: dict[str, Any] | None = None) -> dict[
     return config
 
 
-def _previous_stage_provider(ctx, state: dict[str, Any], stage: str) -> str | None:
+def _previous_stage_provider(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> str | None:
     try:
         index = ctx.STAGES.index(stage)
     except ValueError:
@@ -312,7 +317,7 @@ def _previous_stage_provider(ctx, state: dict[str, Any], stage: str) -> str | No
     return str(schedule.get(ctx.STAGES[index - 1]) or "") or None
 
 
-def _next_stage_provider(ctx, state: dict[str, Any], stage: str) -> str | None:
+def _next_stage_provider(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> str | None:
     try:
         index = ctx.STAGES.index(stage)
     except ValueError:
@@ -330,7 +335,7 @@ def _rotated_order(order: list[str], start_index: int) -> list[str]:
     return order[index:] + order[:index]
 
 
-def _select_iteration_providers(ctx, state: dict[str, Any], config: dict[str, Any]) -> list[str]:
+def _select_iteration_providers(ctx: HarnessRuntime, state: dict[str, Any], config: dict[str, Any]) -> list[str]:
     stage = _plan_stage(config)
     iterations = _iterations(config)
     candidates = _available_plan_providers(ctx, config)
@@ -423,7 +428,7 @@ def _previous_candidate_context(candidates: list[dict[str, Any]], config: dict[s
     return "\n".join(parts)
 
 
-def _iteration_prompt(ctx, 
+def _iteration_prompt(ctx: HarnessRuntime, 
     *,
     base_prompt: str,
     config: dict[str, Any],
@@ -461,7 +466,7 @@ def _iteration_prompt(ctx,
 
 
 def _read_candidate(
-    ctx, output_path: Path,
+    ctx: HarnessRuntime, output_path: Path,
     result_json_path: Path,
     *,
     fallback_output_path: Path | None = None,
@@ -515,7 +520,7 @@ def _cleanup_temp_dir(temp_dir: Path) -> None:
 
 
 def _block_provider_failure(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     *,
     stage: str,
     provider: str,
@@ -565,7 +570,7 @@ def _block_provider_failure(
 
 
 def _block_missing_candidate(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     *,
     stage: str,
     provider: str,
@@ -643,7 +648,7 @@ def _min_drafters(config: dict[str, Any]) -> int:
     return max(1, value)
 
 
-def _select_drafters(ctx, config: dict[str, Any]) -> list[str]:
+def _select_drafters(ctx: HarnessRuntime, config: dict[str, Any]) -> list[str]:
     candidates = _available_plan_providers(ctx, config)
     try:
         max_drafters = int(config.get("max_drafters", 3) or 3)
@@ -654,7 +659,7 @@ def _select_drafters(ctx, config: dict[str, Any]) -> list[str]:
     return candidates[:max_drafters]
 
 
-def _select_synthesizer(ctx, state: dict[str, Any], config: dict[str, Any], drafters: list[str]) -> str:
+def _select_synthesizer(ctx: HarnessRuntime, state: dict[str, Any], config: dict[str, Any], drafters: list[str]) -> str:
     stage = _plan_stage(config)
     try:
         scheduled = ctx.provider_for_stage(stage, state)
@@ -665,7 +670,7 @@ def _select_synthesizer(ctx, state: dict[str, Any], config: dict[str, Any], draf
     return drafters[0]
 
 
-def _draft_prompt(ctx, 
+def _draft_prompt(ctx: HarnessRuntime, 
     *,
     base_prompt: str,
     official_output: Path,
@@ -711,7 +716,7 @@ def _synthesis_prompt(
 
 
 def _run_one_draft(
-    ctx, spec: dict[str, Any],
+    ctx: HarnessRuntime, spec: dict[str, Any],
     *,
     logs_dir: Path,
     stage: str,
@@ -734,7 +739,7 @@ def _run_one_draft(
 
 
 def _run_drafts_parallel(
-    ctx, specs: list[dict[str, Any]],
+    ctx: HarnessRuntime, specs: list[dict[str, Any]],
     *,
     logs_dir: Path,
     stage: str,
@@ -782,7 +787,7 @@ def _cleanup_temp_tree(temp_dir: Path) -> None:
 
 
 def _block_head_change(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     *,
     stage: str,
     provider: str,
@@ -815,7 +820,7 @@ def _block_head_change(
     return state
 
 
-def _block_deep_thinking(ctx, state: dict[str, Any], *, stage: str, reason: str) -> dict[str, Any]:
+def _block_deep_thinking(ctx: HarnessRuntime, state: dict[str, Any], *, stage: str, reason: str) -> dict[str, Any]:
     state["status"] = RunStatus.BLOCKED
     state["blocked"] = {
         "stage": stage,
@@ -834,7 +839,7 @@ def _block_deep_thinking(ctx, state: dict[str, Any], *, stage: str, reason: str)
 
 
 def _finalize_parallel(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     *,
     stage: str,
     provider: str,
@@ -868,7 +873,7 @@ def _finalize_parallel(
 
 
 def _execute_parallel_plan(
-    ctx, state: dict[str, Any], timeout_seconds: int, config: dict[str, Any]
+    ctx: HarnessRuntime, state: dict[str, Any], timeout_seconds: int, config: dict[str, Any]
 ) -> dict[str, Any]:
     stage = _plan_stage(config)
     feature = state["feature_name"]
@@ -1134,7 +1139,7 @@ def _relay_instruction(config: dict[str, Any], roles: list[str]) -> str:
     return "\n".join(lines).strip() or "- 추가 내부 지시 없음"
 
 
-def _relay_step_prompt(ctx, 
+def _relay_step_prompt(ctx: HarnessRuntime, 
     *,
     base_prompt: str,
     official_output: Path,
@@ -1180,7 +1185,7 @@ def _relay_step_prompt(ctx,
 
 
 def _finalize_max(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     *,
     stage: str,
     provider: str,
@@ -1214,7 +1219,7 @@ def _finalize_max(
 
 
 def _collect_max_drafts(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     *,
     stage: str,
     base_prompt: str,
@@ -1318,7 +1323,7 @@ def _collect_max_drafts(
 
 
 def _execute_max_plan(
-    ctx, state: dict[str, Any], timeout_seconds: int, config: dict[str, Any]
+    ctx: HarnessRuntime, state: dict[str, Any], timeout_seconds: int, config: dict[str, Any]
 ) -> dict[str, Any]:
     stage = _plan_stage(config)
     feature = state["feature_name"]
@@ -1543,7 +1548,7 @@ def _execute_max_plan(
     )
 
 
-def execute_plan(ctx, state: dict[str, Any], timeout_seconds: int) -> dict[str, Any]:
+def execute_plan(ctx: HarnessRuntime, state: dict[str, Any], timeout_seconds: int) -> dict[str, Any]:
     config = validate_config_for_state(ctx, state)
     stage = _plan_stage(config)
     if state.get("current_stage") != stage:
@@ -1557,7 +1562,7 @@ def execute_plan(ctx, state: dict[str, Any], timeout_seconds: int) -> dict[str, 
 
 
 def _execute_relay_plan(
-    ctx, state: dict[str, Any], timeout_seconds: int, config: dict[str, Any]
+    ctx: HarnessRuntime, state: dict[str, Any], timeout_seconds: int, config: dict[str, Any]
 ) -> dict[str, Any]:
     stage = _plan_stage(config)
     prompt_rel = state.get("current_prompt")
@@ -1770,7 +1775,7 @@ def _execute_relay_plan(
     raise HarnessError("deep-thinking finished without producing a final plan.")
 
 
-def should_execute_plan(ctx, state: dict[str, Any]) -> bool:
+def should_execute_plan(ctx: HarnessRuntime, state: dict[str, Any]) -> bool:
     if not (state.get("deep_thinking") or state.get("heavy_thinking")):
         return False
     config = _config(ctx)

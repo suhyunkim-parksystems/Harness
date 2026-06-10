@@ -8,9 +8,9 @@ required_inputs:
 optional_inputs:
   - "existing_codebase"
 outputs:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 allowed_writes:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 forbidden_writes:
   - "production_code"
   - "tests"
@@ -57,8 +57,8 @@ default_next_stage: "01_plan"
 5. 기능명은 소문자 영문, 숫자, 하이픈만 쓰는 slug로 만든다. 예: `user-auth`, `invoice-export`.
 6. 질문이 필요하면 아래 `사용자 판단 요청` 형식으로 `status: NEEDS_USER`를 기록하고 멈춘다.
 7. 질문이 필요 없거나 사용자 답변이 있으면 스펙을 확정한다.
-8. `.ai/features/[기능명]/` 디렉토리가 없으면 생성한다.
-9. 확정된 스펙을 `.ai/features/[기능명]/00_spec.md`에 아래 양식으로 작성한다.
+8. `.project/features/[기능명]/` 디렉토리가 없으면 생성한다.
+9. 확정된 스펙을 `.project/features/[기능명]/00_spec.md`에 아래 양식으로 작성한다.
 10. 이 단계는 기본적으로 사람 승인 게이트가 필요하다. 하네스는 `human_gate_required: true`이면 사용자 확인을 받은 뒤 다음 단계로 진행한다.
 
 ---
@@ -122,7 +122,7 @@ default_next_stage: "01_plan"
 
 ## 사용자 판단 요청 형식
 
-질문이 필요하면 `.ai/features/[기능명]/00_spec.md`에 아래 블록만 작성하고 멈춘다.
+질문이 필요하면 `.project/features/[기능명]/00_spec.md`에 아래 블록만 작성하고 멈춘다.
 
 ```markdown
 # 00_spec - [기능명]
@@ -145,7 +145,7 @@ default_next_stage: "01_plan"
 - blocking_reason:
 - risk_level:
 - produced_files:
-  - .ai/features/[기능명]/00_spec.md
+  - .project/features/[기능명]/00_spec.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false
@@ -158,7 +158,7 @@ default_next_stage: "01_plan"
 
 ## 기록 양식
 
-스펙 확정 후 `.ai/features/[기능명]/00_spec.md`에 아래 형식으로 작성한다.
+스펙 확정 후 `.project/features/[기능명]/00_spec.md`에 아래 형식으로 작성한다.
 기존 파일이 있으면 같은 파일을 갱신하되, 이전 사용자 답변 기록을 삭제하지 않는다.
 
 ```markdown
@@ -211,7 +211,7 @@ default_next_stage: "01_plan"
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/00_spec.md
+  - .project/features/[기능명]/00_spec.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false

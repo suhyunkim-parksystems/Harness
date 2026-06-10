@@ -15,15 +15,20 @@ from support import ensure_ai_path
 
 AI_DIR = ensure_ai_path()
 SOURCE_ROOT = AI_DIR.parent
+PROJECT_DIR = SOURCE_ROOT / ".project"
 TEMP_PARENT = AI_DIR / ".selftest_tmp"
 
-STANDARD_STAGE_OUTPUTS = {
-    "00_specify": "00_spec.md",
-    "01_develop": "01_dev.md",
-    "02_review": "02_review.md",
-    "03_fix": "03_fix.md",
-    "04_verify": "04_verify.md",
+from harness_core import pipeline as pipeline_core
+
+
+PIPELINE_MODES = ("fast", "standard", "full")
+PIPELINE_STAGE_OUTPUTS = {
+    mode: dict(pipeline_core.PIPELINES[mode].stage_outputs) for mode in PIPELINE_MODES
 }
+PIPELINE_EXTRACTS_PC_CANDIDATES = {
+    mode: pipeline_core.extracts_pc_candidates(mode) for mode in PIPELINE_MODES
+}
+STANDARD_STAGE_OUTPUTS = PIPELINE_STAGE_OUTPUTS["standard"]
 
 
 def announce(message: str) -> None:
@@ -80,13 +85,15 @@ def copy_tree(source: Path, destination: Path) -> None:
 def provider_command(provider: str) -> list[str]:
     return [
         sys.executable,
-        ".ai\\selftests\\integration_fake_provider.py",
+        ".ai/selftests/integration_fake_provider.py",
         "--provider",
         provider,
     ]
 
 
-def write_fixture_config(fixture_root: Path) -> None:
+def write_fixture_config(
+    fixture_root: Path, model_policy_overrides: dict[str, Any] | None = None
+) -> None:
     config = {
         "providers": {
             provider: {
@@ -117,24 +124,41 @@ def write_fixture_config(fixture_root: Path) -> None:
             "enabled": True,
             "required": True,
             "timeout_seconds": 30,
+            "commands": [],
+        },
+    }
+    project_config = {
+        "verification": {
             "commands": [
                 {
                     "name": "fixture_py_compile",
-                    "command": [sys.executable, "-m", "py_compile", "src\\app.py"],
+                    "command": [sys.executable, "-m", "py_compile", "src/app.py"],
                     "cwd": ".",
                 }
-            ],
-        },
+            ]
+        }
     }
+    if model_policy_overrides:
+        config["model_policy"].update(model_policy_overrides)
     path = fixture_root / ".ai" / "harness.config.json"
+    project_path = fixture_root / ".project" / "harness.config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    project_path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    project_path.write_text(json.dumps(project_config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def copy_harness_into_fixture(fixture_root: Path) -> None:
+def copy_harness_into_fixture(
+    fixture_root: Path, model_policy_overrides: dict[str, Any] | None = None
+) -> None:
     fixture_ai = fixture_root / ".ai"
+    fixture_project = fixture_root / ".project"
     fixture_ai.mkdir(parents=True, exist_ok=True)
-    for name in ("harness.py", "harness_fast.py", "harness_standard.py", "project_contract.md"):
+    fixture_project.mkdir(parents=True, exist_ok=True)
+    for name in ("harness.py", "harness_fast.py", "harness_standard.py"):
         shutil.copy2(AI_DIR / name, fixture_ai / name)
+    if (PROJECT_DIR / "project_contract.md").exists():
+        shutil.copy2(PROJECT_DIR / "project_contract.md", fixture_project / "project_contract.md")
     for dirname in ("harness_core", "templates"):
         copy_tree(AI_DIR / dirname, fixture_ai / dirname)
 
@@ -142,10 +166,8 @@ def copy_harness_into_fixture(fixture_root: Path) -> None:
     fake_provider_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(AI_DIR / "selftests" / "integration_fake_provider.py", fake_provider_dir / "integration_fake_provider.py")
 
-    presets_dir = fixture_root / "presets"
-    presets_dir.mkdir(parents=True, exist_ok=True)
-    copy_tree(SOURCE_ROOT / "presets" / "standard", presets_dir / "standard")
-    write_fixture_config(fixture_root)
+    copy_tree(AI_DIR / "presets", fixture_ai / "presets")
+    write_fixture_config(fixture_root, model_policy_overrides)
 
 
 def write_fixture_project(fixture_root: Path) -> None:
@@ -172,10 +194,10 @@ def init_git_repo(fixture_root: Path) -> None:
     run(["git", "commit", "-m", "initial fixture"], fixture_root)
 
 
-def setup_fixture() -> Path:
+def setup_fixture(model_policy_overrides: dict[str, Any] | None = None) -> Path:
     TEMP_PARENT.mkdir(parents=True, exist_ok=True)
     fixture_root = Path(tempfile.mkdtemp(prefix="integration-", dir=TEMP_PARENT))
-    copy_harness_into_fixture(fixture_root)
+    copy_harness_into_fixture(fixture_root, model_policy_overrides)
     write_fixture_project(fixture_root)
     init_git_repo(fixture_root)
     return fixture_root
@@ -210,8 +232,8 @@ def cleanup_fixture(fixture_root: Path, success: bool) -> None:
 
 
 @contextmanager
-def fixture_workspace() -> Iterator[Path]:
-    fixture_root = setup_fixture()
+def fixture_workspace(model_policy_overrides: dict[str, Any] | None = None) -> Iterator[Path]:
+    fixture_root = setup_fixture(model_policy_overrides)
     success = False
     try:
         yield fixture_root
@@ -230,9 +252,10 @@ def fixture_env(mode: str | None = None) -> dict[str, str]:
     return env
 
 
-def run_standard_pipeline(
+def run_pipeline(
     fixture_root: Path,
     *,
+    pipeline_mode: str = "standard",
     feature: str = "selftest-demo",
     mode: str | None = None,
     max_steps: int = 20,
@@ -241,12 +264,13 @@ def run_standard_pipeline(
     command_timeout: int = 90,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    config = pipeline_core.PIPELINES[pipeline_mode]
     return run(
         [
             sys.executable,
-            ".ai\\harness_standard.py",
+            config.harness_script,
             "run",
-            "Exercise the standard pipeline with a deterministic fake provider.",
+            f"Exercise the {pipeline_mode} pipeline with a deterministic fake provider.",
             "--feature",
             feature,
             "--yes",
@@ -263,5 +287,29 @@ def run_standard_pipeline(
         fixture_root,
         timeout=command_timeout,
         env=fixture_env(mode),
+        check=check,
+    )
+
+
+def run_standard_pipeline(
+    fixture_root: Path,
+    *,
+    feature: str = "selftest-demo",
+    mode: str | None = None,
+    max_steps: int = 20,
+    max_verify_fix_retries: int = 2,
+    timeout_seconds: int = 30,
+    command_timeout: int = 90,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    return run_pipeline(
+        fixture_root,
+        pipeline_mode="standard",
+        feature=feature,
+        mode=mode,
+        max_steps=max_steps,
+        max_verify_fix_retries=max_verify_fix_retries,
+        timeout_seconds=timeout_seconds,
+        command_timeout=command_timeout,
         check=check,
     )

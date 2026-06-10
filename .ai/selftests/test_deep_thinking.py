@@ -77,14 +77,36 @@ def _fake_run_factory(records: list[dict[str, Any]], fail_providers: tuple[str, 
 class ParallelPlanTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="dt-selftest-"))
-        self._orig = {name: getattr(harness, name) for name in ("ROOT", "AI_DIR", "RUNS_DIR", "FEATURES_DIR")}
+        self._orig = {
+            name: getattr(harness, name)
+            for name in (
+                "ROOT",
+                "AI_DIR",
+                "PROJECT_DIR",
+                "HARNESS_CONFIG_PATH",
+                "PROJECT_CONFIG_PATH",
+                "RUNS_DIR",
+                "FEATURES_DIR",
+                "DOCS_DIR",
+                "HISTORY_DIR",
+                "PROJECT_CONTRACT_PATH",
+                "PC_CANDIDATES_PATH",
+            )
+        }
         harness.ROOT = self.tmp
         harness.AI_DIR = self.tmp / ".ai"
-        harness.RUNS_DIR = harness.AI_DIR / "runs"
-        harness.FEATURES_DIR = harness.AI_DIR / "features"
+        harness.PROJECT_DIR = self.tmp / ".project"
+        harness.HARNESS_CONFIG_PATH = harness.AI_DIR / "harness.config.json"
+        harness.PROJECT_CONFIG_PATH = harness.PROJECT_DIR / "harness.config.json"
+        harness.RUNS_DIR = harness.PROJECT_DIR / "runs"
+        harness.FEATURES_DIR = harness.PROJECT_DIR / "features"
+        harness.DOCS_DIR = harness.PROJECT_DIR / "docs"
+        harness.HISTORY_DIR = harness.PROJECT_DIR / "history"
+        harness.PROJECT_CONTRACT_PATH = harness.PROJECT_DIR / "project_contract.md"
+        harness.PC_CANDIDATES_PATH = harness.HISTORY_DIR / "pc_candidates.json"
         harness.RUNS_DIR.mkdir(parents=True, exist_ok=True)
         harness.FEATURES_DIR.mkdir(parents=True, exist_ok=True)
-        self.config_path = harness.AI_DIR / "harness.config.json"
+        self.config_path = harness.HARNESS_CONFIG_PATH
         self._write_config({})
         self._write_prompt()
 
@@ -162,6 +184,16 @@ class ParallelPlanTests(unittest.TestCase):
         }
         ctx["known_provider_names"] = lambda: ["codex", "claude", "agy"]
         ctx["available_providers"] = lambda: [p for p in ("codex", "claude", "agy") if p in available_set]
+        # Relay/sequential planning calls ensure_provider_schedule to learn the
+        # previous stage's provider. The real facade rebuilds the global context
+        # and resolves availability via shutil.which (provider CLI presence), so
+        # it only passes where those CLIs happen to be installed and fails in CI.
+        # Inject a deterministic schedule so the test is hermetic.
+        ctx["ensure_provider_schedule"] = lambda state, record_event=True: (
+            {stage: available[index % len(available)] for index, stage in enumerate(harness.STAGES)}
+            if available
+            else {}
+        )
         ctx["provider_for_stage"] = lambda stage, state=None: synthesizer
         return HarnessContext.from_namespace(ctx)
 
@@ -188,7 +220,7 @@ class ParallelPlanTests(unittest.TestCase):
         state = dt.execute_plan(ctx, self._state(), 30)
 
         self.assertEqual(state["status"], "model_completed")
-        # UX guarantee: exactly one plan file is visible under .ai/features.
+        # UX guarantee: exactly one plan file is visible under .project/features.
         self.assertEqual(self._features_plan_files(), ["01_plan.md"])
         self.assertTrue((harness.FEATURES_DIR / FEATURE / "01_plan.result.json").exists())
         # Intermediate drafts are not surfaced as feature artifacts.

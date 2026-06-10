@@ -122,7 +122,7 @@ If this contract is empty or minimal, treat it as the current set of project-wid
 ```
 
 ## Goal
-Propose only useful project-wide rules to add to `.ai/project_contract.md`.
+Propose only useful project-wide rules to add to `.project/project_contract.md`.
 
 Rules must be concise, clear, and reusable across future pipeline prompts.
 Do not add evidence, long rationale, implementation history, feature-specific detail, or provider-specific detail to the contract.
@@ -183,7 +183,7 @@ def run_agent(agent: str, prompt: str, prefix: str, label: str) -> dict:
         result = base.run_text_provider_prompt(
             agent,
             prompt,
-            logs_dir=base.AI_DIR / "runs" / "_pc_review" / "logs",
+            logs_dir=base.RUNS_DIR / "_pc_review" / "logs",
             log_prefix=prefix,
             timeout_seconds=REVIEW_TIMEOUT_SECONDS,
             performance="medium",
@@ -467,16 +467,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=DEFAULT_AGENT,
         help=f"Agent used to review Project Contract candidates. Default: {DEFAULT_AGENT}.",
     )
+    parser.add_argument(
+        "--yes",
+        "--auto",
+        dest="yes",
+        action="store_true",
+        help=(
+            "Non-interactive: apply the reviewer's proposal without the y/n prompt "
+            "(trusts the reviewer agent's judgment). Used by orchestrate between runs. "
+            "Note: this always APPLIES the proposal; it never takes the interactive "
+            "No path (which rejects all pending)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    try:
-        base.ensure_harness_requirements()
-    except base.HarnessError as exc:
-        print(_style("ERROR:", COLOR_RED, COLOR_BOLD), exc, file=sys.stderr)
-        return 1
-
     argv = list(sys.argv[1:] if argv is None else argv)
     args = parse_args(argv)
     agent = args.agent
@@ -492,7 +498,10 @@ def main(argv: list[str] | None = None) -> int:
     protected = [candidates_path, contract_path]
 
     print(_style(f"미정 PC 후보 {len(pending)}개를 {agent}가 한 번에 검토합니다.", COLOR_BOLD, COLOR_CYAN))
-    print(_style("추가할 최종 Project Contract 문장을 제안받고, 사용자는 전체 제안에 대해 한 번만 y/n을 선택합니다.", COLOR_CYAN))
+    if args.yes:
+        print(_style("--yes 모드: 리뷰어 제안을 자동 적용합니다(전체 기각 경로 없음).", COLOR_CYAN))
+    else:
+        print(_style("추가할 최종 Project Contract 문장을 제안받고, 사용자는 전체 제안에 대해 한 번만 y/n을 선택합니다.", COLOR_CYAN))
 
     current_contract = _read_text(contract_path)
     before_review = _snapshot(protected)
@@ -518,7 +527,11 @@ def main(argv: list[str] | None = None) -> int:
     display_batch_proposal(proposal, pending)
 
     print()
-    accepted = ask_yes_no("이 Project Contract 갱신 제안을 적용할까요? (Yes=적용 / No=전체 기각): ")
+    if args.yes:
+        accepted = True
+        print(_style("[--yes] 사용자 확인 없이 리뷰어 제안을 자동 적용합니다.", COLOR_BOLD, COLOR_GREEN))
+    else:
+        accepted = ask_yes_no("이 Project Contract 갱신 제안을 적용할까요? (Yes=적용 / No=전체 기각): ")
     if accepted:
         before_apply = _snapshot(protected)
         try:

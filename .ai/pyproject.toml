@@ -1,0 +1,14 @@
+# Python tooling config for the harness.
+#
+# Currently this file exists only to hold the pyright static-type settings (it
+# deliberately has no [build-system]/[project] table -- the harness is run as
+# scripts, not built/installed). Keeping the type-check config here, in the
+# conventional Python tooling file, is read natively by both the pyright CLI
+# (the harness_core gate in selftests/test_pyright.py, run from .ai) and the
+# editor's language server -- so there is no separate pyrightconfig.json.
+[tool.pyright]
+include = ["harness_core"]
+exclude = ["**/__pycache__", "**/.selftest_tmp"]
+pythonVersion = "3.13"
+typeCheckingMode = "basic"
+reportMissingModuleSource = false

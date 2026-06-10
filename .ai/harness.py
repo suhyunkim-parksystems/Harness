@@ -26,11 +26,10 @@ from harness_core.console import (
     format_duration,  # re-exported into ctx
     status_style,
 )
-from harness_core.context import HarnessContext
+from harness_core.context import HarnessContext, HarnessRuntime
 from harness_core.errors import HarnessError
 from harness_core.frontmatter import parse_frontmatter, parse_scalar
-from harness_core.json_io import read_json_file, write_json_file
-from harness_core.requirements import ensure_requirements_installed
+from harness_core.json_io import read_json_file, read_json_value_file, write_json_file
 from harness_core.status import RunStatus
 from harness_core import deep_thinking as deep_thinking_core
 from harness_core import history as history_core
@@ -55,24 +54,24 @@ from harness_core.text import (
 )
 
 
-def _ctx() -> HarnessContext:
-    """Build the typed HarnessContext passed into harness_core from this module's
+def _ctx() -> HarnessRuntime:
+    """Build the typed HarnessRuntime passed into harness_core from this module's
     current namespace (constants + facade functions). Rebuilt per call so it
-    always reflects the active pipeline's rebound constants."""
+    always reflects the active pipeline's rebound constants. The concrete carrier
+    is HarnessContext; the contract callers see is the HarnessRuntime Protocol."""
     return HarnessContext.from_namespace(globals())
-
-
-def ensure_harness_requirements() -> None:
-    ensure_requirements_installed(ROOT)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 AI_DIR = ROOT / ".ai"
-RUNS_DIR = AI_DIR / "runs"
-FEATURES_DIR = AI_DIR / "features"
-DOCS_DIR = AI_DIR / "docs"
-HISTORY_DIR = AI_DIR / "history"
-PROJECT_CONTRACT_PATH = AI_DIR / "project_contract.md"
+PROJECT_DIR = ROOT / ".project"
+HARNESS_CONFIG_PATH = AI_DIR / "harness.config.json"
+PROJECT_CONFIG_PATH = PROJECT_DIR / "harness.config.json"
+RUNS_DIR = PROJECT_DIR / "runs"
+FEATURES_DIR = PROJECT_DIR / "features"
+DOCS_DIR = PROJECT_DIR / "docs"
+HISTORY_DIR = PROJECT_DIR / "history"
+PROJECT_CONTRACT_PATH = PROJECT_DIR / "project_contract.md"
 PC_CANDIDATES_PATH = HISTORY_DIR / "pc_candidates.json"
 HISTORY_SCHEMA_VERSION = 1
 PC_CANDIDATES_SCHEMA_VERSION = 1
@@ -99,7 +98,7 @@ def apply_pipeline(mode: str) -> None:
     config = pipeline_core.PIPELINES[mode]
     g = globals()
     g["PIPELINE_MODE"] = config.mode
-    g["PRESETS_DIR"] = ROOT / "presets" / config.presets_subdir
+    g["PRESETS_DIR"] = AI_DIR / "presets" / config.presets_subdir
     g["STAGES"] = list(config.stages)
     g["STAGE_OUTPUTS"] = dict(config.stage_outputs)
     g["COMMIT_STAGES"] = set(config.stages)
@@ -243,6 +242,7 @@ def rel(path: Path) -> str:
 
 
 def ensure_dirs() -> None:
+    PROJECT_DIR.mkdir(parents=True, exist_ok=True)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     FEATURES_DIR.mkdir(parents=True, exist_ok=True)
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
@@ -256,81 +256,74 @@ def git_output(args: list[str]) -> str:
     return process_core.git_output(ROOT, args)
 
 
-def git_upstream_ref() -> str | None:
-    proc = git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], check=False)
-    if proc.returncode != 0:
-        return None
-    upstream = proc.stdout.strip()
-    return upstream or None
-
-
-def unpushed_commit_lines() -> tuple[str | None, list[str]]:
-    upstream = git_upstream_ref()
-    if not upstream:
-        return None, []
-    proc = git(["log", "--oneline", "--no-decorate", f"{upstream}..HEAD"], check=False)
-    if proc.returncode != 0:
-        return upstream, []
-    return upstream, [line.strip() for line in proc.stdout.splitlines() if line.strip()]
-
-
-def group_harness_commit_lines(commits: list[str]) -> tuple[dict[str, list[tuple[str, str]]], list[str]]:
-    grouped: dict[str, list[tuple[str, str]]] = {}
-    other: list[str] = []
-    pattern = re.compile(
-        r"^(?P<sha>[0-9a-f]+)\s+"
-        r"\[(?P<feature>[^\]]+)\]\[(?P<stamp>[^\]]+)\]\[(?P<stage>[^\]]+)\]"
-    )
-    for line in commits:
-        match = pattern.match(line)
-        if not match:
-            other.append(line)
+def unmerged_run_branches() -> list[dict[str, str]]:
+    """Completed runs whose per-run branch still exists and is NOT yet merged
+    into its base. A branch counts as handled when it is merged (its tip is an
+    ancestor of base) OR deleted -- the squash-or-delete completion rule. This
+    is the run-per-branch successor to the old unpushed-commit interlock."""
+    if not RUNS_DIR.exists():
+        return []
+    pending: list[dict[str, str]] = []
+    for path in sorted(RUNS_DIR.glob("*/run.json")):
+        try:
+            parsed = read_json_value_file(path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
-        grouped.setdefault(match.group("feature"), []).append(
-            (match.group("stage"), match.group("sha"))
+        if not isinstance(parsed, dict):
+            continue
+        if str(parsed.get("status") or "") != RunStatus.COMPLETE:
+            continue
+        run_branch = str(parsed.get("run_branch") or "")
+        base_branch = str(parsed.get("base_branch") or "")
+        if not run_branch or not base_branch:
+            continue  # linear run (no branch created) -> nothing to merge
+        if not process_core.branch_exists(ROOT, run_branch):
+            continue  # branch deleted -> handled (covers squash-then-delete)
+        if not process_core.branch_exists(ROOT, base_branch):
+            continue  # base gone -> cannot determine; fail open, do not block
+        if process_core.branch_is_merged(ROOT, run_branch, base_branch):
+            continue  # already merged into base
+        pending.append(
+            {
+                "feature": str(parsed.get("feature_name") or path.parent.name),
+                "run_branch": run_branch,
+                "base_branch": base_branch,
+            }
         )
-    return grouped, other
+    return pending
 
 
-def format_unpushed_commits_message(upstream: str, commits: list[str]) -> str:
-    count = len(commits)
-    grouped, other = group_harness_commit_lines(commits)
+def format_unmerged_run_branches_message(runs: list[dict[str, str]]) -> str:
     lines = [
         color_text("새 파이프라인을 시작할 수 없습니다.", "red", "bold"),
         "",
         (
-            f"현재 브랜치에 원격({upstream})에 반영되지 않은 커밋이 "
-            f"{color_text(str(count), 'yellow', 'bold')}개 있습니다."
+            f"아직 base 브랜치에 merge되지 않은 완료된 run이 "
+            f"{color_text(str(len(runs)), 'yellow', 'bold')}개 있습니다."
         ),
         "하네스는 한 번의 새 파이프라인을 하나의 기능 단위로 취급합니다.",
-        "이전 기능의 커밋을 먼저 원격에 반영한 뒤 다시 시작하세요.",
+        "이전 run의 브랜치를 base에 merge(또는 삭제)한 뒤 다시 시작하세요.",
         "",
+        color_text("미-merge run 브랜치:", "yellow", "bold"),
     ]
-    if grouped:
-        lines.append(color_text("미반영 하네스 기능:", "yellow", "bold"))
-        for feature, stage_commits in grouped.items():
-            lines.append(f"  - {feature}")
-            lines.extend(f"    - {stage} {sha}" for stage, sha in stage_commits)
-    if other:
-        if grouped:
-            lines.append("")
-        lines.append(color_text("미반영 기타 커밋:", "yellow", "bold"))
-        lines.extend(f"  - {line}" for line in other[:20])
-        if len(other) > 20:
-            lines.append(f"  - ... and {len(other) - 20} more")
+    for run in runs:
+        lines.append(f"  - {run['feature']}: {run['run_branch']} -> {run['base_branch']}")
     lines.extend(
         [
             "",
-            f"{color_text('권장 조치:', 'green', 'bold')} git push",
+            (
+                f"{color_text('권장 조치:', 'green', 'bold')} "
+                "git checkout <base> && git merge --no-ff <run-branch>"
+            ),
         ]
     )
     return "\n".join(lines)
 
 
-def assert_no_unpushed_commits_for_new_run() -> None:
-    upstream, commits = unpushed_commit_lines()
-    if upstream and commits:
-        raise HarnessError(format_unpushed_commits_message(upstream, commits))
+def assert_prev_run_branch_merged() -> None:
+    pending = unmerged_run_branches()
+    if pending:
+        raise HarnessError(format_unmerged_run_branches_message(pending))
 
 
 def incomplete_run_summaries() -> list[dict[str, str]]:
@@ -339,8 +332,8 @@ def incomplete_run_summaries() -> list[dict[str, str]]:
     summaries: list[dict[str, str]] = []
     for path in sorted(RUNS_DIR.glob("*/run.json")):
         try:
-            parsed = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            parsed = read_json_value_file(path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             summaries.append(
                 {
                     "feature": path.parent.name,
@@ -458,6 +451,26 @@ def git_commit(message: str, amend: bool = False) -> str:
     return process_core.git_commit(ROOT, message, amend)
 
 
+def current_branch() -> str:
+    return process_core.current_branch(ROOT)
+
+
+def branch_exists(name: str) -> bool:
+    return process_core.branch_exists(ROOT, name)
+
+
+def checkout_new_branch(name: str) -> None:
+    return process_core.checkout_new_branch(ROOT, name)
+
+
+def branch_is_merged(branch: str, base: str) -> bool:
+    return process_core.branch_is_merged(ROOT, branch, base)
+
+
+def merge_tree_conflicts(base: str, branch: str) -> "list[str] | None":
+    return process_core.merge_tree_conflicts(ROOT, base, branch)
+
+
 def read_preset(stage: str) -> tuple[dict[str, Any], str, str]:
     path = PRESETS_DIR / f"{stage}.md"
     if not path.exists():
@@ -475,8 +488,20 @@ def config_path() -> Path:
     return provider_core.config_path(_ctx())
 
 
+def project_config_path() -> Path:
+    return provider_core.project_config_path(_ctx())
+
+
 def write_config(config: dict[str, Any]) -> None:
     return provider_core.write_config(_ctx(), config)
+
+
+def load_project_config() -> dict[str, Any]:
+    return provider_core.load_project_config(_ctx())
+
+
+def write_project_config(config: dict[str, Any]) -> None:
+    return provider_core.write_project_config(_ctx(), config)
 
 
 def raw_provider_command(provider: str) -> list[str]:
@@ -777,11 +802,36 @@ def stage_result_json_path(feature: str, stage: str) -> Path:
     return output.with_name(f"{output.stem}.result.json")
 
 
+def pipeline_config_for_state(state: dict[str, Any]):
+    config = pipeline_core.get(state.get("pipeline_mode"))
+    if config:
+        return config
+    return pipeline_core.get(PIPELINE_MODE) or pipeline_core.PIPELINES[pipeline_core.DEFAULT_MODE]
+
+
+def pipeline_stages_for_state(state: dict[str, Any]) -> list[str]:
+    return list(pipeline_config_for_state(state).stages)
+
+
+def stage_output_path_for_state(feature: str, stage: str, state: dict[str, Any]) -> Path | None:
+    output_name = pipeline_config_for_state(state).stage_outputs.get(stage)
+    if not output_name:
+        return None
+    return feature_dir(feature) / output_name
+
+
+def stage_result_json_path_for_state(feature: str, stage: str, state: dict[str, Any]) -> Path | None:
+    output = stage_output_path_for_state(feature, stage, state)
+    if output is None:
+        return None
+    return output.with_name(f"{output.stem}.result.json")
+
+
 def load_state(feature: str) -> dict[str, Any]:
     path = state_path(feature)
     if not path.exists():
         raise HarnessError(f"Run not found: {feature}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_json_value_file(path)
 
 
 def save_state(state: dict[str, Any]) -> None:
@@ -1157,6 +1207,29 @@ def next_action_hint(state: dict[str, Any], expected_output: Path | None) -> tup
     return "현재 상태를 기준으로 다음 하네스 명령을 실행하세요.", ("cyan", "bold")
 
 
+def read_only_provider_for_state_stage(state: dict[str, Any], stage: str) -> str:
+    schedule = state.get("provider_schedule")
+    if isinstance(schedule, dict):
+        provider = str(schedule.get(stage) or "")
+        if provider:
+            return provider
+
+    if stage == PC_REVIEW_STAGE:
+        return "-"
+
+    config = pipeline_config_for_state(state)
+    if stage not in config.stages:
+        return "-"
+
+    preset = AI_DIR / "presets" / config.presets_subdir / f"{stage}.md"
+    try:
+        meta, _ = parse_frontmatter(preset.read_text(encoding="utf-8"))
+    except OSError:
+        return "-"
+    preferred = str(meta.get("preferred_model", ""))
+    return PROVIDER_BY_MODEL.get(preferred) or "-"
+
+
 def print_detailed_status(state: dict[str, Any]) -> None:
     feature = state["feature_name"]
     stage = str(state.get("current_stage") or "")
@@ -1165,14 +1238,11 @@ def print_detailed_status(state: dict[str, Any]) -> None:
     expected_result_json: Path | None = None
     provider = "-"
     attempt = "-"
-    if stage in STAGES:
-        expected_output = stage_output_path(feature, stage)
-        expected_result_json = stage_result_json_path(feature, stage)
+    if stage in pipeline_stages_for_state(state):
+        expected_output = stage_output_path_for_state(feature, stage, state)
+        expected_result_json = stage_result_json_path_for_state(feature, stage, state)
         attempt = str(state.get("attempts", {}).get(stage, 0) or 0)
-        try:
-            provider = provider_for_stage(stage, state)
-        except HarnessError:
-            provider = "-"
+        provider = read_only_provider_for_state_stage(state, stage)
 
     print(color_text(feature, "bold"))
     print_status_field("performance", normalize_performance(state.get("performance")), "cyan")
@@ -1537,26 +1607,28 @@ def compact_todo_text(text: str, max_chars: int = 180) -> str:
 
 def todo_relevant_stage_for_state(state: dict[str, Any]) -> str:
     stage = str(state.get("current_stage") or "")
-    if stage in STAGES:
+    stages = pipeline_stages_for_state(state)
+    if stage in stages or stage == PC_REVIEW_STAGE:
         return stage
-    if str(state.get("status") or "") == RunStatus.COMPLETE and STAGES:
-        return STAGES[-1]
+    blocked = state.get("blocked") if isinstance(state.get("blocked"), dict) else {}
+    blocked_stage = str(blocked.get("stage") or "") if isinstance(blocked, dict) else ""
+    if blocked_stage in stages or blocked_stage == PC_REVIEW_STAGE:
+        return blocked_stage
+    if str(state.get("status") or "") == RunStatus.COMPLETE and stages:
+        return stages[-1]
     return ""
 
 
 def todo_provider_for_state(state: dict[str, Any]) -> str:
     stage = todo_relevant_stage_for_state(state)
-    if stage not in STAGES:
+    if stage not in pipeline_stages_for_state(state) and stage != PC_REVIEW_STAGE:
         return "-"
-    try:
-        return provider_for_stage(stage, state)
-    except HarnessError:
-        return "-"
+    return read_only_provider_for_state_stage(state, stage)
 
 
 def todo_attempt_for_state(state: dict[str, Any]) -> str:
     stage = todo_relevant_stage_for_state(state)
-    if stage not in STAGES:
+    if stage not in pipeline_stages_for_state(state):
         return "-"
     return str(state.get("attempts", {}).get(stage, 0) or 0)
 
@@ -1568,11 +1640,28 @@ def todo_artifact_state(path: Path) -> str:
 def todo_stage_artifacts_for_state(state: dict[str, Any]) -> tuple[str, str]:
     feature = str(state.get("feature_name") or "")
     stage = todo_relevant_stage_for_state(state)
-    if not feature or stage not in STAGES:
+    if not feature or stage not in pipeline_stages_for_state(state):
         return "-", "-"
-    output = stage_output_path(feature, stage)
-    result_json = stage_result_json_path(feature, stage)
+    output = stage_output_path_for_state(feature, stage, state)
+    result_json = stage_result_json_path_for_state(feature, stage, state)
+    if output is None or result_json is None:
+        return "-", "-"
     return todo_artifact_state(output), todo_artifact_state(result_json)
+
+
+def todo_provider_artifacts(feature: str, stage: str, state: dict[str, Any]) -> dict[str, str]:
+    provider = read_only_provider_for_state_stage(state, stage)
+    if provider == "-":
+        provider = "unknown"
+    attempt = int(state.get("attempts", {}).get(stage, 1) or 1)
+    logs_dir = run_dir(feature) / "logs"
+    return {
+        "provider": provider,
+        "stdout": rel(logs_dir / f"{stage}_attempt{attempt}_{provider}.out.txt"),
+        "stderr": rel(logs_dir / f"{stage}_attempt{attempt}_{provider}.err.txt"),
+        "meta": rel(logs_dir / f"{stage}_attempt{attempt}_{provider}.json"),
+        "provider_log": rel(logs_dir / f"{stage}_attempt{attempt}_{provider}.cli.log"),
+    }
 
 
 def todo_next_action(state: dict[str, Any]) -> str:
@@ -1588,10 +1677,11 @@ def todo_next_action(state: dict[str, Any]) -> str:
         reason = str(blocked.get("reason") or "") if isinstance(blocked, dict) else ""
         if "Human gate approval required" in reason:
             return f"python {script} approve {feature} --auto --yes{mode_args}"
-        if stage in STAGES:
-            output = stage_output_path(feature, stage)
-            result_json = stage_result_json_path(feature, stage)
-            if output.exists() and result_json.exists():
+        stage = todo_relevant_stage_for_state(state) or stage
+        if stage in pipeline_stages_for_state(state):
+            output = stage_output_path_for_state(feature, stage, state)
+            result_json = stage_result_json_path_for_state(feature, stage, state)
+            if output and result_json and output.exists() and result_json.exists():
                 if state.get("interactive_mode"):
                     return f"python {script} resume {feature} --auto --yes{mode_args}"
                 return f"python {script} resume {feature}{mode_args}"
@@ -1613,8 +1703,8 @@ def todo_items() -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     for path in sorted(RUNS_DIR.glob("*/run.json")):
         try:
-            state = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            state = read_json_value_file(path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             items.append(
                 {
                     "feature": path.parent.name,
@@ -1686,8 +1776,9 @@ def todo_items() -> list[dict[str, str]]:
 
 def print_todo_detail(feature: str) -> None:
     state = load_state(feature)
+    print_status_field("NEXT COMMAND", todo_next_action(state), "green", "bold")
+    print()
     print_detailed_status(state)
-    print_status_field("next command", todo_next_action(state), "green")
     log_path = run_log_path(feature)
     if log_path.exists():
         print_status_field("harness log", str(log_path), "cyan")
@@ -1702,8 +1793,8 @@ def print_todo_detail(feature: str) -> None:
         print_status_field("last output", output_state, "cyan")
         print_status_field("last result", result_json_state, "cyan")
 
-    if relevant_stage in STAGES:
-        artifacts = latest_provider_artifacts(feature, relevant_stage, state)
+    if relevant_stage in pipeline_stages_for_state(state) or relevant_stage == PC_REVIEW_STAGE:
+        artifacts = todo_provider_artifacts(feature, relevant_stage, state)
         print()
         print(color_text("provider artifacts:", "cyan", "bold"))
         print_status_field("stdout", artifacts["stdout"], "cyan")
@@ -1748,6 +1839,7 @@ def print_todo(feature: str | None = None) -> None:
             f"mode={item.get('mode', 'manual')} performance={item.get('performance', '-')} "
             f"attempt={item.get('attempt', '-')}"
         )
+        print(f"  next command: {color_text(item['next'], 'green', 'bold')}")
         if item["reason"]:
             print(f"  reason: {item['reason']}")
         if item.get("prompt"):
@@ -1758,7 +1850,6 @@ def print_todo(feature: str | None = None) -> None:
             print(f"  handoff: {item['handoff']}")
         if item.get("last_event"):
             print(f"  last_event: {item['last_event']}")
-        print(f"  next: {item['next']}")
 
 
 def cleanup_run(feature: str, keep_feature: bool = False) -> None:
@@ -1832,7 +1923,7 @@ def doctor_provider_smoke(provider: str, timeout_seconds: int) -> None:
     stderr_path.write_text(proc.stderr or "", encoding="utf-8")
     after_paths = set(git_changed_paths())
     new_changes = sorted(
-        path for path in after_paths - before_paths if not path.startswith(".ai/runs/_doctor/")
+        path for path in after_paths - before_paths if not path.startswith(".project/runs/_doctor/")
     )
     ok = proc.returncode == 0 and "HARNESS_DOCTOR_OK" in (proc.stdout or "")
     style = ("green", "bold") if ok else ("red", "bold")
@@ -1857,6 +1948,7 @@ def doctor(deep: bool = False, deep_timeout_seconds: int = DEFAULT_DOCTOR_DEEP_T
     print_providers()
     print_provider_schedule_preview()
     ensure_dirs()
+    print(f"project_dir: {PROJECT_DIR}")
     print(f"runs_dir: {RUNS_DIR}")
     print(f"features_dir: {FEATURES_DIR}")
     print("changed_paths:")
@@ -2060,7 +2152,7 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument(
         "--keep-feature",
         action="store_true",
-        help="Only remove .ai/runs/<feature>, preserving .ai/features/<feature>.",
+        help="Only remove .project/runs/<feature>, preserving .project/features/<feature>.",
     )
 
     doctor_parser = sub.add_parser("doctor", help="Check local harness prerequisites.")
@@ -2089,10 +2181,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
     try:
-        ensure_harness_requirements()
-        parser = build_parser()
-        args = parser.parse_args(argv)
         if args.command == "run":
             if getattr(args, "strategy", None) and not getattr(args, "deep_thinking", False):
                 raise HarnessError("--strategy requires --deep-thinking.")

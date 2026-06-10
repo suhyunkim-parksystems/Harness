@@ -8,9 +8,9 @@ required_inputs:
 optional_inputs:
   - "existing_codebase"
 outputs:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 allowed_writes:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 forbidden_writes:
   - "production_code"
   - "tests"
@@ -56,7 +56,7 @@ default_next_stage: "01_develop"
 3. 모호한 점이 fast 진행을 막을 정도이면 `status: NEEDS_USER`로 멈춘다.
 4. 보안, 인증/인가, 결제, 데이터 마이그레이션, 공개 API 계약 변경, 함수 시그니처/데이터 포맷/설정 키/파일 경로/CLI 사용법/기존 테스트 기대값 변경, 대규모 리팩터링, 되돌리기 어려운 변경은 `risk_level: high`로 보고 `status: NEEDS_USER`로 멈추며 standard 또는 full 파이프라인을 권고한다.
 5. low/medium risk면 구현 가능한 acceptance criteria와 간단한 파일 단위 계획을 작성한다.
-6. `.ai/features/[기능명]/00_spec.md`에 결과를 기록한다.
+6. `.project/features/[기능명]/00_spec.md`에 결과를 기록한다.
 
 ---
 
@@ -72,7 +72,7 @@ fast 파이프라인은 `low`와 `medium`을 기본 대상으로 한다.
 
 ## 사용자 판단 요청 형식
 
-질문이 필요하면 `.ai/features/[기능명]/00_spec.md`에 아래 형식만 작성하고 멈춘다.
+질문이 필요하면 `.project/features/[기능명]/00_spec.md`에 아래 형식만 작성하고 멈춘다.
 
 ```markdown
 # 00_spec - [기능명]
@@ -94,7 +94,7 @@ fast 파이프라인은 `low`와 `medium`을 기본 대상으로 한다.
 - blocking_reason:
 - risk_level:
 - produced_files:
-  - .ai/features/[기능명]/00_spec.md
+  - .project/features/[기능명]/00_spec.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false
@@ -159,7 +159,7 @@ fast 파이프라인은 `low`와 `medium`을 기본 대상으로 한다.
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/00_spec.md
+  - .project/features/[기능명]/00_spec.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false

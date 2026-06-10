@@ -4,13 +4,13 @@ role: "implementation_plan"
 preferred_model: "Antigravity"
 model_policy: "preferred_not_hard_block"
 required_inputs:
-  - ".ai/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/00_spec.md"
 optional_inputs:
   - "existing_codebase"
 outputs:
-  - ".ai/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/01_plan.md"
 allowed_writes:
-  - ".ai/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/01_plan.md"
 forbidden_writes:
   - "production_code"
   - "tests"
@@ -50,13 +50,13 @@ default_next_stage: "02_develop"
 
 ## 작업 순서
 
-1. `.ai/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 제외 항목, 위험도를 정확히 파악한다.
+1. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 제외 항목, 위험도를 정확히 파악한다.
 2. 스펙과 관련된 기존 코드를 깊이 읽는다. 영향 파일, 재사용 가능한 모듈, 충돌 가능한 구간, 하위 호환성 위험을 실제 검색과 파일 읽기로 확인한다.
 3. 구현 접근 방식 후보를 도출한다. 후보가 둘 이상이면 트레이드오프를 비교한다.
 4. 최종 접근 방식을 선택하고, 선택 근거와 탈락 대안의 사유를 기록한다.
 5. 변경 파일 계획, 데이터/제어 흐름, 구현 단계, 호환성 검토, 위험 완화 방안, 테스트 전략, 롤백 또는 복구 방향을 구체화한다.
 6. 사용자 판단이 필요하면 아래 `사용자 판단 요청` 형식으로 `status: NEEDS_USER`를 기록하고 멈춘다.
-7. 결과를 `.ai/features/[기능명]/01_plan.md`에 작성한다.
+7. 결과를 `.project/features/[기능명]/01_plan.md`에 작성한다.
 8. `risk_level` 또는 변경 성격상 사람 승인이 필요하면 산출물의 `human_gate_required`를 `true`로 기록한다.
 9. 하네스는 frontmatter의 `human_gate_required: "defer_to_output"`을 보면 `01_plan.md`의 `## 단계 결과` 값을 기준으로 승인 게이트를 판단한다.
 
@@ -110,7 +110,7 @@ default_next_stage: "02_develop"
 
 ## 기록 양식
 
-계획 확정 후 `.ai/features/[기능명]/01_plan.md`에 아래 형식으로 작성한다.
+계획 확정 후 `.project/features/[기능명]/01_plan.md`에 아래 형식으로 작성한다.
 
 ```markdown
 # 01_plan - [기능명]
@@ -194,7 +194,7 @@ default_next_stage: "02_develop"
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/01_plan.md
+  - .project/features/[기능명]/01_plan.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false

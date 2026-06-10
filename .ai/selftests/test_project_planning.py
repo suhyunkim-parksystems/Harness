@@ -13,6 +13,7 @@ from support import ensure_ai_path
 ensure_ai_path()
 
 import deep_interview as di  # noqa: E402
+import orchestrate  # noqa: E402
 import project_planning as pp  # noqa: E402
 
 
@@ -300,6 +301,74 @@ class TierPerformanceTests(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
+# batch.json generation (orchestrate handoff)
+# --------------------------------------------------------------------------- #
+class BatchRecordTests(unittest.TestCase):
+    def _ordered(self) -> list[dict[str, Any]]:
+        feats = [
+            _feat("model", tier="standard", perf="medium"),
+            _feat("api", tier="full-max", perf="high", deps=["model"]),
+            _feat("stub", tier="fast", perf="lite"),
+        ]
+        ordered = pp.topological_order(feats)
+        for f in ordered:
+            f["_performance"] = pp.normalize_performance(f.get("performance"), f.get("tier"))
+        return ordered
+
+    def test_tier_to_orchestrate_mapping(self) -> None:
+        self.assertEqual(pp.tier_to_orchestrate("fast"), ("fast", False, "parallel"))
+        self.assertEqual(pp.tier_to_orchestrate("standard"), ("standard", False, "parallel"))
+        self.assertEqual(pp.tier_to_orchestrate("full"), ("full", False, "parallel"))
+        self.assertEqual(pp.tier_to_orchestrate("full-sequential"), ("full", True, "sequential"))
+        self.assertEqual(pp.tier_to_orchestrate("full-max"), ("full", True, "max"))
+
+    def test_tier_to_orchestrate_unknown_defaults_full(self) -> None:
+        self.assertEqual(pp.tier_to_orchestrate("nonsense"), ("full", False, "parallel"))
+
+    def test_build_batch_record_shape(self) -> None:
+        record = pp.build_batch_record(project_slug="shop", ordered=self._ordered())
+        self.assertEqual(record["name"], "shop")
+        self.assertEqual(record["cooldown_seconds"], 900)
+        # run feature ids match plan.txt ids (dependency-ordered: model -> stub -> api).
+        by_feature = {r["feature"]: r for r in record["runs"]}
+        self.assertEqual(set(by_feature), {"01-model", "02-stub", "03-api"})
+        api = by_feature["03-api"]
+        self.assertEqual(api["pipeline"], "full")
+        self.assertTrue(api["deep_thinking"])
+        self.assertEqual(api["strategy"], "max")
+        self.assertEqual(api["performance"], "high")
+        self.assertEqual(api["request"], "api 구현")
+        self.assertEqual(api["state"]["status"], "pending")
+        self.assertEqual(api["state"]["attempts"], 0)
+        # a non-deep tier maps to deep_thinking=False, parallel strategy.
+        stub = by_feature["02-stub"]
+        self.assertEqual(stub["pipeline"], "fast")
+        self.assertFalse(stub["deep_thinking"])
+        # batch.example.json과 동일하게 모든 입력 필드를 run마다 명시한다.
+        for run in record["runs"]:
+            for key in (
+                "pipeline", "performance", "decision_mode", "yes", "deep_thinking",
+                "strategy", "timeout", "max_steps", "max_verify_fix_retries", "max_attempts",
+            ):
+                self.assertIn(key, run)
+
+    def test_request_falls_back_to_title_when_no_refined_prompt(self) -> None:
+        feat = {"slug": "x", "title": "Title only", "tier": "fast", "performance": "lite", "depends_on": []}
+        ordered = pp.topological_order([feat])
+        record = pp.build_batch_record(project_slug="p", ordered=ordered)
+        self.assertEqual(record["runs"][0]["request"], "Title only")
+
+    def test_record_passes_orchestrate_validation(self) -> None:
+        record = pp.build_batch_record(project_slug="shop", ordered=self._ordered())
+        orchestrate.validate_batch(record)  # 핸드오프가 orchestrate 스키마를 통과해야 한다.
+        api = next(r for r in record["runs"] if r["feature"] == "03-api")  # full-max feature
+        eff = orchestrate.effective_config(record, api)
+        self.assertEqual(eff["pipeline"], "full")
+        self.assertTrue(eff["deep_thinking"])
+        self.assertEqual(eff["strategy"], "max")
+
+
+# --------------------------------------------------------------------------- #
 # relay provider assignment
 # --------------------------------------------------------------------------- #
 class RelayAssignmentTests(unittest.TestCase):
@@ -377,7 +446,7 @@ class _PlanModelFake:
         self.valid_drafters = valid_drafters  # None => all drafts valid
 
     def __call__(self, harness, args, *, prompt=None, logs_dir=None, log_prefix=None,
-                 repair_schema=None, status_message=None, provider=None):
+                 repair_schema=None, status_message=None, provider=None, show_spinner=True):
         self.calls.append(log_prefix)
         if log_prefix and log_prefix.startswith("draft_"):
             drafter = log_prefix[len("draft_"):]
@@ -412,6 +481,70 @@ class ParallelStrategyTests(unittest.TestCase):
         result = self._run(fake, ["codex"])
         self.assertEqual(result["_via"], "decompose")
         self.assertNotIn("synthesis", fake.calls)
+
+    def test_blind_drafts_run_concurrently(self) -> None:
+        # Barrier(3)로 동시성을 결정론적으로 증명한다: 세 초안이 '동시에' in-flight여야만
+        # barrier가 풀린다. 순차였다면 첫 초안이 barrier에서 막혀 timeout -> 모두 드롭 -> PlanningError.
+        import threading
+        barrier = threading.Barrier(3, timeout=10)
+        seen: list[str] = []
+        lock = threading.Lock()
+
+        def fake(harness, args, *, prompt=None, logs_dir=None, log_prefix=None,
+                 repair_schema=None, status_message=None, provider=None, show_spinner=True):
+            if log_prefix and log_prefix.startswith("draft_"):
+                drafter = log_prefix[len("draft_"):]
+                barrier.wait()  # 세 워커가 동시에 도달해야만 통과(아니면 BrokenBarrierError)
+                with lock:
+                    seen.append(drafter)
+                return {"features": [_feat(f"d-{drafter}")]}
+            return {"_via": log_prefix, "features": [_feat(f"x-{log_prefix}")]}
+
+        with mock.patch.object(pp, "plan_model_json", fake), \
+             mock.patch.object(pp, "available_plan_providers", return_value=["codex", "claude", "agy"]):
+            result = pp.run_parallel_decompose(
+                object(), _ns(),
+                request="r", plan_files=[], reference_folders=[], reuse_folders=[],
+                transcript=[], logs_dir=self.tmp,
+            )
+        self.assertEqual(sorted(seen), ["agy", "claude", "codex"])  # 셋 다 동시에 in-flight였음
+        self.assertEqual(result["_via"], "synthesis")
+
+    def test_results_are_reordered_by_drafter_regardless_of_completion(self) -> None:
+        # 완료 순서가 뒤섞여도(역순으로 빨리 끝나도) 후보는 drafter 순서로 재정렬된다.
+        import threading
+        finished = threading.Event()
+
+        def fake(harness, args, *, prompt=None, logs_dir=None, log_prefix=None,
+                 repair_schema=None, status_message=None, provider=None, show_spinner=True):
+            if log_prefix == "draft_codex":
+                finished.wait(5)  # codex를 일부러 마지막에 끝나게 한다
+                return {"features": [_feat("d-codex")]}
+            if log_prefix and log_prefix.startswith("draft_"):
+                drafter = log_prefix[len("draft_"):]
+                out = {"features": [_feat(f"d-{drafter}")]}
+                finished.set()  # codex보다 먼저 완료
+                return out
+            # 종합 단계: 후보 순서를 검사할 수 있도록 그대로 반환
+            return {"_via": "synthesis", "_seen_order": list(_CAPTURED["candidates"])}
+
+        captured = _CAPTURED = {"candidates": []}
+        real_synth = pp.build_candidates_decompose_prompt
+
+        def capture_synth(*, candidates, **kw):
+            captured["candidates"] = [c["features"][0]["slug"] for c in candidates]
+            return real_synth(candidates=candidates, **kw)
+
+        with mock.patch.object(pp, "plan_model_json", fake), \
+             mock.patch.object(pp, "build_candidates_decompose_prompt", capture_synth), \
+             mock.patch.object(pp, "available_plan_providers", return_value=["codex", "claude", "agy"]):
+            pp.run_parallel_decompose(
+                object(), _ns(),
+                request="r", plan_files=[], reference_folders=[], reuse_folders=[],
+                transcript=[], logs_dir=self.tmp,
+            )
+        # codex가 가장 늦게 끝났어도 후보 순서는 drafter 순서(codex, claude, agy)
+        self.assertEqual(captured["candidates"], ["d-codex", "d-claude", "d-agy"])
 
     def test_one_valid_draft_is_promoted_without_synthesis(self) -> None:
         fake = _PlanModelFake(valid_drafters={"codex"})
@@ -671,6 +804,211 @@ class ContractUpdatePhaseTests(unittest.TestCase):
         ]})
         text = self.contract.read_text(encoding="utf-8")
         self.assertEqual(text.count("모델은 Git을 직접 실행하지 않는다."), 1)
+
+
+# --------------------------------------------------------------------------- #
+# 참조 타깃 강제 (reuse/reference 구체 인용)
+# --------------------------------------------------------------------------- #
+class ReferenceTargetEnforcementTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.sdk = self.root / "sdk"
+        (self.sdk / "Modules").mkdir(parents=True)
+        self.real = self.sdk / "Modules" / "FooModule.cs"
+        self.real.write_text("public class FooModule {}", encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    # --- _canonical_target_file -------------------------------------------- #
+    def test_canonical_accepts_folder_relative(self) -> None:
+        self.assertIsNotNone(pp._canonical_target_file("Modules/FooModule.cs", [self.sdk]))
+
+    def test_canonical_accepts_absolute(self) -> None:
+        self.assertIsNotNone(pp._canonical_target_file(str(self.real), [self.sdk]))
+
+    def test_canonical_accepts_folder_name_prefixed(self) -> None:
+        self.assertIsNotNone(pp._canonical_target_file("sdk/Modules/FooModule.cs", [self.sdk]))
+
+    def test_canonical_normalizes_backslashes_and_quotes(self) -> None:
+        self.assertIsNotNone(pp._canonical_target_file('"Modules\\\\FooModule.cs"', [self.sdk]))
+
+    def test_canonical_rejects_hallucinated_path(self) -> None:
+        self.assertIsNone(pp._canonical_target_file("Modules/Ghost.cs", [self.sdk]))
+
+    def test_canonical_rejects_path_outside_folder(self) -> None:
+        outside = self.root / "outside.cs"
+        outside.write_text("x", encoding="utf-8")
+        self.assertIsNone(pp._canonical_target_file(str(outside), [self.sdk]))
+
+    # --- validate_decomposition_targets ------------------------------------ #
+    def test_valid_target_passes_and_is_cached(self) -> None:
+        feats = [
+            {"slug": "a", "reuse_targets": [
+                {"path": "Modules/FooModule.cs", "symbol": "FooModule", "how_to_use": "상속"}
+            ]}
+        ]
+        hard, soft = pp.validate_decomposition_targets(
+            feats, reference_folders=[], reuse_folders=[self.sdk]
+        )
+        self.assertEqual(hard, [])
+        self.assertEqual(soft, [])
+        cached = feats[0]["_reuse_targets"]
+        self.assertEqual(len(cached), 1)
+        self.assertEqual(cached[0]["symbol"], "FooModule")
+        self.assertTrue(cached[0]["path"].endswith("FooModule.cs"))
+
+    def test_hallucinated_path_is_hard_violation(self) -> None:
+        feats = [{"slug": "b", "reuse_targets": [{"path": "Modules/Ghost.cs"}]}]
+        hard, soft = pp.validate_decomposition_targets(
+            feats, reference_folders=[], reuse_folders=[self.sdk]
+        )
+        self.assertTrue(any("Ghost.cs" in v for v in hard))
+        self.assertEqual(feats[0]["_reuse_targets"], [])
+
+    def test_empty_targets_without_reason_is_soft_only(self) -> None:
+        feats = [{"slug": "c", "reuse_targets": []}]
+        hard, soft = pp.validate_decomposition_targets(
+            feats, reference_folders=[], reuse_folders=[self.sdk]
+        )
+        self.assertEqual(hard, [])  # 빈 타깃은 하드 위반이 아니다(배치를 막지 않음)
+        self.assertTrue(any("사유" in v for v in soft))
+
+    def test_empty_targets_with_reason_passes_cleanly(self) -> None:
+        feats = [{"slug": "d", "reuse_targets": [], "no_reuse_reason": "순수 상수 정의라 플랫폼 무관"}]
+        hard, soft = pp.validate_decomposition_targets(
+            feats, reference_folders=[], reuse_folders=[self.sdk]
+        )
+        self.assertEqual(hard, [])
+        self.assertEqual(soft, [])  # 사유를 적으면 경고도 없다
+
+    def test_no_folders_means_no_enforcement(self) -> None:
+        feats = [{"slug": "e", "reuse_targets": [], "reference_targets": []}]
+        hard, soft = pp.validate_decomposition_targets(
+            feats, reference_folders=[], reuse_folders=[]
+        )
+        self.assertEqual((hard, soft), ([], []))
+
+    def test_reference_targets_validated_independently(self) -> None:
+        feats = [{"slug": "f", "reference_targets": [{"path": "Modules/Ghost.cs", "why": "패턴"}]}]
+        hard, soft = pp.validate_decomposition_targets(
+            feats, reference_folders=[self.sdk], reuse_folders=[]
+        )
+        self.assertTrue(any("참고 레퍼런스" in v for v in hard))
+
+    # --- apply_targets_to_features (propagation) --------------------------- #
+    def test_targets_are_synthesized_into_refined_prompt(self) -> None:
+        feats = [{"slug": "a", "refined_prompt": "장바구니를 구현한다", "reuse_targets": [
+            {"path": "Modules/FooModule.cs", "symbol": "FooModule", "how_to_use": "상속해 등록"}
+        ]}]
+        pp.validate_decomposition_targets(feats, reference_folders=[], reuse_folders=[self.sdk])
+        pp.apply_targets_to_features(feats)
+        prompt = feats[0]["refined_prompt"]
+        self.assertIn("장바구니를 구현한다", prompt)
+        self.assertIn("참조 지점", prompt)
+        self.assertIn("FooModule.cs", prompt)
+        self.assertIn("FooModule", prompt)
+
+    def test_apply_is_noop_without_targets(self) -> None:
+        feats = [{"slug": "x", "refined_prompt": "그대로", "_reuse_targets": [], "_reference_targets": []}]
+        pp.apply_targets_to_features(feats)
+        self.assertEqual(feats[0]["refined_prompt"], "그대로")
+
+    def test_synthesized_prompt_survives_compaction(self) -> None:
+        feats = [{"slug": "a", "refined_prompt": "본문", "reuse_targets": [
+            {"path": "Modules/FooModule.cs", "symbol": "FooModule", "how_to_use": "상속"}
+        ]}]
+        pp.validate_decomposition_targets(feats, reference_folders=[], reuse_folders=[self.sdk])
+        pp.apply_targets_to_features(feats)
+        compacted = di.compact_text(pp.feature_request_text({**feats[0], "_slug": "a"}))
+        self.assertIn("FooModule.cs", compacted)  # not truncated away
+
+    # --- enforce_decomposition_targets (driver) ---------------------------- #
+    def test_enforce_skips_when_no_folders(self) -> None:
+        decomposition = {"features": [{"slug": "a"}]}
+        with mock.patch.object(pp, "plan_model_json") as model:
+            out = pp.enforce_decomposition_targets(
+                None, _ns(), decomposition=decomposition, request="r",
+                plan_files=[], reference_folders=[], reuse_folders=[],
+                transcript=[], logs_dir=self.root,
+            )
+        model.assert_not_called()
+        self.assertIs(out, decomposition)
+
+    def test_enforce_clean_decomposition_does_not_call_model(self) -> None:
+        decomposition = {"features": [{"slug": "a", "refined_prompt": "x", "reuse_targets": [
+            {"path": "Modules/FooModule.cs", "symbol": "FooModule", "how_to_use": "상속"}
+        ]}]}
+        with mock.patch.object(pp, "plan_model_json") as model:
+            pp.enforce_decomposition_targets(
+                None, _ns(), decomposition=decomposition, request="r",
+                plan_files=[], reference_folders=[], reuse_folders=[self.sdk],
+                transcript=[], logs_dir=self.root,
+            )
+        model.assert_not_called()
+        self.assertIn("참조 지점", decomposition["features"][0]["refined_prompt"])
+
+    def test_enforce_empty_without_reason_warns_not_blocks(self) -> None:
+        # 참조가 정말 필요 없는 feature(빈 타깃·사유 없음·환각 아님)는 배치를 막지 않는다:
+        # 모델 재요청도 없고 PlanningError도 없이 그대로 통과한다.
+        decomposition = {"features": [{"slug": "standalone", "refined_prompt": "상수만 정의"}]}
+        with mock.patch.object(pp, "plan_model_json") as model:
+            out = pp.enforce_decomposition_targets(
+                None, _ns(), decomposition=decomposition, request="r",
+                plan_files=[], reference_folders=[], reuse_folders=[self.sdk],
+                transcript=[], logs_dir=self.root,
+            )
+        model.assert_not_called()
+        self.assertIs(out, decomposition)
+        self.assertEqual(out["features"][0]["_reuse_targets"], [])
+
+    def test_enforce_mixed_blocks_on_hallucination_only(self) -> None:
+        # 같은 분해에 환각 feature와 '참조 없는' feature가 섞여 있으면, 환각만 repair를 구동한다.
+        bad = {"features": [
+            {"slug": "ghost", "reuse_targets": [{"path": "Modules/Ghost.cs"}]},
+            {"slug": "standalone", "refined_prompt": "상수만"},
+        ]}
+        good = {"features": [
+            {"slug": "ghost", "refined_prompt": "x", "reuse_targets": [
+                {"path": "Modules/FooModule.cs", "symbol": "FooModule", "how_to_use": "상속"}
+            ]},
+            {"slug": "standalone", "refined_prompt": "상수만"},
+        ]}
+        with mock.patch.object(pp, "plan_model_json", return_value=good) as model:
+            out = pp.enforce_decomposition_targets(
+                None, _ns(), decomposition=bad, request="r",
+                plan_files=[], reference_folders=[], reuse_folders=[self.sdk],
+                transcript=[], logs_dir=self.root,
+            )
+        model.assert_called_once()  # 환각 때문에 한 번 repair
+        self.assertIn("참조 지점", out["features"][0]["refined_prompt"])
+        self.assertEqual(out["features"][1]["_reuse_targets"], [])  # standalone은 빈 채 통과
+
+    def test_enforce_repairs_then_passes(self) -> None:
+        bad = {"features": [{"slug": "a", "reuse_targets": [{"path": "Modules/Ghost.cs"}]}]}
+        good = {"features": [{"slug": "a", "refined_prompt": "x", "reuse_targets": [
+            {"path": "Modules/FooModule.cs", "symbol": "FooModule", "how_to_use": "상속"}
+        ]}]}
+        with mock.patch.object(pp, "plan_model_json", return_value=good) as model:
+            out = pp.enforce_decomposition_targets(
+                None, _ns(), decomposition=bad, request="r",
+                plan_files=[], reference_folders=[], reuse_folders=[self.sdk],
+                transcript=[], logs_dir=self.root,
+            )
+        model.assert_called_once()
+        self.assertIn("참조 지점", out["features"][0]["refined_prompt"])
+
+    def test_enforce_raises_when_repair_still_invalid(self) -> None:
+        bad = {"features": [{"slug": "a", "reuse_targets": [{"path": "Modules/Ghost.cs"}]}]}
+        with mock.patch.object(pp, "plan_model_json", return_value=bad) as model:
+            with self.assertRaises(pp.PlanningError):
+                pp.enforce_decomposition_targets(
+                    None, _ns(), decomposition=bad, request="r",
+                    plan_files=[], reference_folders=[], reuse_folders=[self.sdk],
+                    transcript=[], logs_dir=self.root,
+                )
+        self.assertEqual(model.call_count, pp.MAX_TARGET_REPAIR_ROUNDS)
 
 
 if __name__ == "__main__":

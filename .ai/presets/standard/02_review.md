@@ -4,17 +4,17 @@ role: "standard_code_review"
 preferred_model: "Antigravity"
 model_policy: "preferred_not_hard_block"
 required_inputs:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_dev.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_dev.md"
 outputs:
-  - ".ai/features/[기능명]/02_review.md"
+  - ".project/features/[기능명]/02_review.md"
 allowed_writes:
-  - ".ai/features/[기능명]/02_review.md"
+  - ".project/features/[기능명]/02_review.md"
 forbidden_writes:
   - "production_code"
   - "tests"
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_dev.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_dev.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 commit_owner: "harness"
@@ -59,8 +59,8 @@ default_next_stage: "03_fix"
 ## 작업 순서
 
 1. 요청사항이 리뷰 불가능할 정도로 모호한 경우에만 `status: NEEDS_USER`로 멈춘다.
-2. `.ai/features/[기능명]/00_spec.md`의 목표, acceptance criteria, 구현 계획, 검증 계획, 위험도를 파악한다.
-3. `.ai/features/[기능명]/01_dev.md`를 읽고 구현 요약, 변경 파일, 테스트 결과, 남은 위험을 파악한다.
+2. `.project/features/[기능명]/00_spec.md`의 목표, acceptance criteria, 구현 계획, 검증 계획, 위험도를 파악한다.
+3. `.project/features/[기능명]/01_dev.md`를 읽고 구현 요약, 변경 파일, 테스트 결과, 남은 위험을 파악한다.
 4. 실제 변경 diff를 확인한다.
    - `01_dev.md`의 `pre_commit_diff_command` 또는 diff command가 있으면 우선 사용한다.
    - 리뷰 시작 시점의 현재 `HEAD`를 `review_target_commit`으로 기록한다.
@@ -69,7 +69,7 @@ default_next_stage: "03_fix"
    - 어느 것도 불가능하면 `status: FAIL`로 기록하고 이유를 남긴다.
 5. 아래 리뷰 관점에 따라 코드를 검토한다.
 6. 지적 사항은 `BLOCKER / MAJOR / MINOR / NIT` severity로 분류한다.
-7. 리뷰 결과를 `.ai/features/[기능명]/02_review.md`에 작성한다.
+7. 리뷰 결과를 `.project/features/[기능명]/02_review.md`에 작성한다.
 
 ---
 
@@ -187,7 +187,7 @@ default_next_stage: "03_fix"
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/02_review.md
+  - .project/features/[기능명]/02_review.md
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false

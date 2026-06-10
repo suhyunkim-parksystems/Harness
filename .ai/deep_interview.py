@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 from difflib import SequenceMatcher
 import importlib.util
 import json
@@ -16,13 +17,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 AI_DIR = ROOT / ".ai"
+PROJECT_DIR = ROOT / ".project"
 HARNESS_PATH = AI_DIR / "harness.py"
-DEFAULT_LOGS_DIR = AI_DIR / "runs" / "_deep_interview" / "logs"
-
-if str(AI_DIR) not in sys.path:
-    sys.path.insert(0, str(AI_DIR))
-
-from harness_core.requirements import HarnessRequirementsError, ensure_requirements_installed  # noqa: E402
+DEFAULT_LOGS_DIR = PROJECT_DIR / "runs" / "_deep_interview" / "logs"
 
 PROFILES: dict[str, dict[str, float | int]] = {
     "quick": {"min_rounds": 0, "max_rounds": 3, "target_ambiguity": 0.30},
@@ -627,10 +624,11 @@ def model_json(
     performance: str | None,
     repair_schema: str,
     status_message: str,
+    show_spinner: bool = True,
 ) -> dict[str, Any]:
     before_status = git_status_porcelain(ROOT)
     try:
-        with Spinner(status_message):
+        with (Spinner(status_message) if show_spinner else contextlib.nullcontext()):
             result = run_deep_interview_provider_prompt(
                 harness,
                 provider,
@@ -669,7 +667,7 @@ def model_json(
             "```"
         )
         try:
-            with Spinner("응답 형식을 정리하는 중"):
+            with (Spinner("응답 형식을 정리하는 중") if show_spinner else contextlib.nullcontext()):
                 repair = run_deep_interview_provider_prompt(
                     harness,
                     provider,
@@ -1082,17 +1080,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
     try:
-        ensure_requirements_installed(ROOT)
-        parser = build_parser()
-        args = parser.parse_args(argv)
         return run_interview(args)
     except KeyboardInterrupt:
         print("\ncancelled", file=sys.stderr)
         return 130
-    except HarnessRequirementsError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
     except InterviewError as exc:
         print(f"deep_interview: error: {exc}", file=sys.stderr)
         return 1

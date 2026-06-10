@@ -11,6 +11,7 @@ from support import ensure_ai_path
 ensure_ai_path()
 
 import harness  # noqa: E402
+from harness_core.json_io import read_json_file  # noqa: E402
 
 
 class StatePersistenceSelfTests(unittest.TestCase):
@@ -49,6 +50,29 @@ class StatePersistenceSelfTests(unittest.TestCase):
         # A successful save must not leave any temporary scratch file behind.
         leftovers = list(path.parent.glob("*.tmp"))
         self.assertEqual(leftovers, [], f"unexpected temp files: {leftovers}")
+
+    def test_load_state_accepts_utf8_bom(self) -> None:
+        state = {
+            "feature_name": "demo",
+            "current_stage": "00_specify",
+            "status": "waiting_for_model",
+        }
+        path = harness.state_path("demo")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\xef\xbb\xbf" + json.dumps(state).encode("utf-8"))
+
+        loaded = harness.load_state("demo")
+
+        self.assertEqual(loaded["feature_name"], "demo")
+        self.assertEqual(loaded["current_stage"], "00_specify")
+
+    def test_read_json_file_accepts_utf8_bom(self) -> None:
+        path = self._tmp_path / "bom.json"
+        path.write_bytes(b"\xef\xbb\xbf" + json.dumps({"ok": True}).encode("utf-8"))
+
+        loaded = read_json_file(path, {})
+
+        self.assertEqual(loaded, {"ok": True})
 
     def test_save_state_preserves_existing_run_json_on_write_failure(self) -> None:
         # Arrange: a known-good run.json already on disk.

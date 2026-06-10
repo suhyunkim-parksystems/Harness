@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .context import HarnessRuntime
+
 import json
 import re
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -10,10 +16,11 @@ from typing import Any
 
 from . import pipeline
 from .errors import HarnessError
+from .json_io import loads_json_text, read_json_value_file
 from .status import ResultStatus, RunStatus
 
 
-def find_stage_result(ctx, text: str) -> dict[str, Any]:
+def find_stage_result(ctx: HarnessRuntime, text: str) -> dict[str, Any]:
     lines = text.splitlines()
     start = None
     for i, line in enumerate(lines):
@@ -60,7 +67,7 @@ def find_stage_result(ctx, text: str) -> dict[str, Any]:
     return result
 
 
-def parse_result_json_from_text(ctx, text: str) -> dict[str, Any]:
+def parse_result_json_from_text(ctx: HarnessRuntime, text: str) -> dict[str, Any]:
     fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.S | re.I)
     if fence:
         text = fence.group(1).strip()
@@ -71,23 +78,23 @@ def parse_result_json_from_text(ctx, text: str) -> dict[str, Any]:
             return {}
         text = text[start : end + 1]
     try:
-        parsed = json.loads(text)
+        parsed = loads_json_text(text)
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
 
-def read_stage_result_json(ctx, path: Path) -> dict[str, Any]:
+def read_stage_result_json(ctx: HarnessRuntime, path: Path) -> dict[str, Any]:
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+        parsed = read_json_value_file(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HarnessError(f"Invalid stage result JSON in {ctx.rel(path)}: {exc}") from exc
     if not isinstance(parsed, dict):
         raise HarnessError(f"Stage result JSON must be an object: {ctx.rel(path)}")
     return parsed
 
 
-def parse_result_scalar(ctx, value: str) -> Any:
+def parse_result_scalar(ctx: HarnessRuntime, value: str) -> Any:
     value = value.strip()
     low = value.lower()
     if low == "true":
@@ -99,7 +106,7 @@ def parse_result_scalar(ctx, value: str) -> Any:
     return value
 
 
-def stage_default_next(ctx, stage: str) -> str | None:
+def stage_default_next(ctx: HarnessRuntime, stage: str) -> str | None:
     meta, _, _ = ctx.read_preset(stage)
     if stage == ctx.VERIFY_STAGE:
         return str(meta.get("default_next_stage_on_pass", ctx.DOCUMENT_STAGE or "done"))
@@ -108,11 +115,11 @@ def stage_default_next(ctx, stage: str) -> str | None:
     return meta.get("default_next_stage")  # type: ignore[return-value]
 
 
-def stage_status(ctx, result: dict[str, Any]) -> str:
+def stage_status(ctx: HarnessRuntime, result: dict[str, Any]) -> str:
     return str(result.get("status", "")).strip().upper()
 
 
-def prompt_path(ctx, state: dict[str, Any], stage: str) -> Path:
+def prompt_path(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> Path:
     attempts = state.setdefault("attempts", {})
     attempt = int(attempts.get(stage, 0)) + 1
     attempts[stage] = attempt
@@ -121,7 +128,7 @@ def prompt_path(ctx, state: dict[str, Any], stage: str) -> Path:
     return prompt_dir / f"{stage}_attempt{attempt}.md"
 
 
-def generate_prompt(ctx, state: dict[str, Any], stage: str, retry_context: str | None = None) -> Path:
+def generate_prompt(ctx: HarnessRuntime, state: dict[str, Any], stage: str, retry_context: str | None = None) -> Path:
     feature = state["feature_name"]
     meta, body, raw = ctx.read_preset(stage)
     scheduled_provider = ctx.provider_for_stage(stage, state)
@@ -292,7 +299,7 @@ For PASS or FAIL stages, also include `history_notes` with these arrays when kno
     return path
 
 
-def print_provider_heartbeat(ctx,
+def print_provider_heartbeat(ctx: HarnessRuntime,
     *,
     stage: str,
     provider: str,
@@ -301,6 +308,7 @@ def print_provider_heartbeat(ctx,
     stderr_path: Path,
     last_stdout_size: int,
     last_stderr_size: int,
+    replace_previous: bool = False,
 ) -> tuple[int, int]:
     stdout_size = ctx.file_size(stdout_path)
     stderr_size = ctx.file_size(stderr_path)
@@ -315,15 +323,29 @@ def print_provider_heartbeat(ctx,
         f"stdout +{ctx.format_bytes(max(0, stdout_delta))}",
         f"stderr +{ctx.format_bytes(max(0, stderr_delta))}",
     ]
-    print(" | ".join(parts), flush=True)
+    line = " | ".join(parts)
+    if provider_heartbeat_rewrites_line():
+        prefix = "\r\x1b[2K" if replace_previous else ""
+        print(f"{prefix}{line}", end="", flush=True)
+    else:
+        print(line, flush=True)
     return stdout_size, stderr_size
 
 
-def harness_script_for_pipeline_mode(ctx, pipeline_mode: Any) -> str:
+def provider_heartbeat_rewrites_line() -> bool:
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+def finish_provider_heartbeat(active: bool) -> None:
+    if active and provider_heartbeat_rewrites_line():
+        print(flush=True)
+
+
+def harness_script_for_pipeline_mode(ctx: HarnessRuntime, pipeline_mode: Any) -> str:
     return pipeline.harness_script(pipeline_mode or ctx.PIPELINE_MODE)
 
 
-def suggested_retry_command(ctx, state: dict[str, Any], *, auto: bool = True) -> str:
+def suggested_retry_command(ctx: HarnessRuntime, state: dict[str, Any], *, auto: bool = True) -> str:
     script = harness_script_for_pipeline_mode(ctx, state.get("pipeline_mode"))
     feature = str(state.get("feature_name") or "<feature>")
     parts = ["python", script, "retry", feature]
@@ -339,7 +361,7 @@ def suggested_retry_command(ctx, state: dict[str, Any], *, auto: bool = True) ->
     return " ".join(parts)
 
 
-def provider_log_hint(ctx, stdout_path: Path, stderr_path: Path, provider_log_path: Path) -> str:
+def provider_log_hint(ctx: HarnessRuntime, stdout_path: Path, stderr_path: Path, provider_log_path: Path) -> str:
     return (
         f"stdout={ctx.rel(stdout_path)} "
         f"stderr={ctx.rel(stderr_path)} "
@@ -347,7 +369,7 @@ def provider_log_hint(ctx, stdout_path: Path, stderr_path: Path, provider_log_pa
     )
 
 
-def log_tail(ctx, path: Path, lines: int = 2, max_chars: int = 500) -> str | None:
+def log_tail(ctx: HarnessRuntime, path: Path, lines: int = 2, max_chars: int = 500) -> str | None:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -361,7 +383,7 @@ def log_tail(ctx, path: Path, lines: int = 2, max_chars: int = 500) -> str | Non
     return tail
 
 
-def provider_output_tails(ctx, stdout_path: Path, stderr_path: Path) -> dict[str, str]:
+def provider_output_tails(ctx: HarnessRuntime, stdout_path: Path, stderr_path: Path) -> dict[str, str]:
     tails: dict[str, str] = {}
     stdout_tail = log_tail(ctx, stdout_path)
     stderr_tail = log_tail(ctx, stderr_path)
@@ -373,7 +395,7 @@ def provider_output_tails(ctx, stdout_path: Path, stderr_path: Path) -> dict[str
 
 
 def provider_failure_reason(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     *,
     stage: str,
     provider: str,
@@ -390,7 +412,7 @@ def provider_failure_reason(
     )
 
 
-def stage_artifact_signature(ctx, paths: list[Path]) -> tuple[tuple[str, int, int], ...] | None:
+def stage_artifact_signature(ctx: HarnessRuntime, paths: list[Path]) -> tuple[tuple[str, int, int], ...] | None:
     signature: list[tuple[str, int, int]] = []
     for path in paths:
         try:
@@ -404,14 +426,14 @@ def stage_artifact_signature(ctx, paths: list[Path]) -> tuple[tuple[str, int, in
 
 def read_live_stage_result(path: Path) -> dict[str, Any] | None:
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
+        parsed = read_json_value_file(path)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     return parsed if isinstance(parsed, dict) else None
 
 
 def stage_artifact_completion_candidate(
-    ctx, feature: str,
+    ctx: HarnessRuntime, feature: str,
     stage: str,
     baseline_signature: tuple[tuple[str, int, int], ...] | None,
 ) -> dict[str, Any] | None:
@@ -464,12 +486,12 @@ def stop_provider_after_artifact_completion(proc: subprocess.Popen[str]) -> int 
     return proc.returncode
 
 
-def git_head_changed(ctx, before_head: str, after_head: str) -> bool:
+def git_head_changed(ctx: HarnessRuntime, before_head: str, after_head: str) -> bool:
     return bool(before_head and after_head and before_head != after_head)
 
 
 def _block_provider_changed_head(
-    ctx, state: dict[str, Any], *, stage: str, before_head: str, after_head: str
+    ctx: HarnessRuntime, state: dict[str, Any], *, stage: str, before_head: str, after_head: str
 ) -> dict[str, Any]:
     state["status"] = RunStatus.BLOCKED
     state["blocked"] = {
@@ -495,7 +517,7 @@ def _block_provider_changed_head(
 
 
 def _finalize_artifact_salvage(
-    ctx,
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     proc: "subprocess.Popen[str]",
     *,
@@ -570,7 +592,7 @@ def _finalize_artifact_salvage(
 
 
 def _handle_provider_timeout(
-    ctx,
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     proc: "subprocess.Popen[str]",
     *,
@@ -621,14 +643,15 @@ def _handle_provider_timeout(
         provider_log=ctx.rel(cli_log_path),
         retry_command=suggested_retry_command(ctx, state),
         elapsed_seconds=elapsed,
-        **provider_output_tails(ctx, stdout_path, stderr_path),
+        # tails dict carries only stdout/stderr log fields (never console/stage)
+        **provider_output_tails(ctx, stdout_path, stderr_path),  # pyright: ignore[reportArgumentType]
     )
     ctx.save_state(state)
     return state
 
 
 def _write_provider_run_meta(
-    ctx,
+    ctx: HarnessRuntime,
     meta_path: Path,
     *,
     stage: str,
@@ -668,7 +691,7 @@ def _write_provider_run_meta(
 
 
 def _handle_provider_nonzero_exit(
-    ctx,
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     proc: "subprocess.Popen[str]",
     *,
@@ -716,14 +739,15 @@ def _handle_provider_nonzero_exit(
         provider_log=ctx.rel(cli_log_path),
         retry_command=suggested_retry_command(ctx, state),
         elapsed_seconds=elapsed,
-        **provider_output_tails(ctx, stdout_path, stderr_path),
+        # tails dict carries only stdout/stderr log fields (never console/stage)
+        **provider_output_tails(ctx, stdout_path, stderr_path),  # pyright: ignore[reportArgumentType]
     )
     ctx.save_state(state)
     return state
 
 
 def _handle_provider_no_output(
-    ctx,
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     *,
     stage: str,
@@ -776,7 +800,7 @@ def _handle_provider_no_output(
 
 
 def _finalize_provider_success(
-    ctx,
+    ctx: HarnessRuntime,
     state: dict[str, Any],
     *,
     stage: str,
@@ -800,7 +824,7 @@ def _finalize_provider_success(
     return state
 
 
-def execute_current_prompt(ctx, state: dict[str, Any], timeout_seconds: int) -> dict[str, Any]:
+def execute_current_prompt(ctx: HarnessRuntime, state: dict[str, Any], timeout_seconds: int) -> dict[str, Any]:
     feature = state["feature_name"]
     stage = state["current_stage"]
     prompt_rel = state.get("current_prompt")
@@ -878,6 +902,7 @@ def execute_current_prompt(ctx, state: dict[str, Any], timeout_seconds: int) -> 
         last_output_check = started
         last_completion_signature: tuple[tuple[str, int, int], ...] | None = None
         stable_completion_checks = 0
+        heartbeat_active = False
         while proc.poll() is None:
             now = time.time()
             if now - last_output_check >= output_check_seconds:
@@ -895,6 +920,7 @@ def execute_current_prompt(ctx, state: dict[str, Any], timeout_seconds: int) -> 
                         last_completion_signature = signature
                         stable_completion_checks = 1
                     if stable_completion_checks >= stable_checks_required:
+                        finish_provider_heartbeat(heartbeat_active)
                         return _finalize_artifact_salvage(
                             ctx,
                             state,
@@ -913,6 +939,7 @@ def execute_current_prompt(ctx, state: dict[str, Any], timeout_seconds: int) -> 
                             started=started,
                         )
             if timeout_seconds > 0 and now - started > timeout_seconds:
+                finish_provider_heartbeat(heartbeat_active)
                 return _handle_provider_timeout(
                     ctx,
                     state,
@@ -934,10 +961,13 @@ def execute_current_prompt(ctx, state: dict[str, Any], timeout_seconds: int) -> 
                     stderr_path=stderr_path,
                     last_stdout_size=last_stdout_size,
                     last_stderr_size=last_stderr_size,
+                    replace_previous=heartbeat_active,
                 )
+                heartbeat_active = True
                 last_heartbeat = now
             time.sleep(1)
 
+    finish_provider_heartbeat(heartbeat_active)
     elapsed = round(time.time() - started, 2)
     after_head = ctx.safe_git_head()
     _write_provider_run_meta(

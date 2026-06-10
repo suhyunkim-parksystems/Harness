@@ -17,11 +17,11 @@ def _policy_context(meta: dict[str, Any], changed_paths: list[str]) -> HarnessCo
         return str(path).replace("\\", "/")
 
     return HarnessContext.from_namespace({
-        "read_preset": lambda stage: (meta, "", Path(f"presets/{stage}.md")),
+        "read_preset": lambda stage: (meta, "", Path(f".ai/presets/{stage}.md")),
         "filtered_changed_paths": lambda state, stage: changed_paths,
         "STAGES": ["01_develop"],
-        "stage_output_path": lambda feature, stage: Path(f".ai/features/{feature}/01_dev.md"),
-        "stage_result_json_path": lambda feature, stage: Path(f".ai/features/{feature}/01_dev.result.json"),
+        "stage_output_path": lambda feature, stage: Path(f".project/features/{feature}/01_dev.md"),
+        "stage_result_json_path": lambda feature, stage: Path(f".project/features/{feature}/01_dev.result.json"),
         "rel": rel,
         "log_event": lambda *args, **kwargs: None,
     })
@@ -30,7 +30,7 @@ def _policy_context(meta: dict[str, Any], changed_paths: list[str]) -> HarnessCo
 class WritePolicySelfTests(unittest.TestCase):
     def test_forbidden_production_code_change_is_violation(self) -> None:
         meta = {
-            "allowed_writes": [".ai/features/[기능명]/01_dev.md"],
+            "allowed_writes": [".project/features/[기능명]/01_dev.md"],
             "forbidden_writes": ["production_code"],
         }
         state = {"feature_name": "demo"}

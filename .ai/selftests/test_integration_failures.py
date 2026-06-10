@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from integration_support import announce, fixture_workspace, read_json, run_standard_pipeline
+from integration_support import PIPELINE_MODES, announce, fixture_workspace, read_json, run_pipeline, run_standard_pipeline
 
 
 def blocked_reason(state: dict[str, object]) -> str:
@@ -23,7 +23,7 @@ class HarnessIntegrationFailureSelfTests(unittest.TestCase):
                 command_timeout=45,
                 check=False,
             )
-            state = read_json(fixture_root / ".ai" / "runs" / "selftest-malformed-json" / "run.json")
+            state = read_json(fixture_root / ".project" / "runs" / "selftest-malformed-json" / "run.json")
 
             self.assertNotEqual(proc.returncode, 0)
             self.assertEqual(state["status"], "blocked")
@@ -39,7 +39,7 @@ class HarnessIntegrationFailureSelfTests(unittest.TestCase):
                 command_timeout=45,
                 check=False,
             )
-            state = read_json(fixture_root / ".ai" / "runs" / "selftest-write-policy" / "run.json")
+            state = read_json(fixture_root / ".project" / "runs" / "selftest-write-policy" / "run.json")
 
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertEqual(state["status"], "blocked")
@@ -57,7 +57,7 @@ class HarnessIntegrationFailureSelfTests(unittest.TestCase):
                 command_timeout=45,
                 check=False,
             )
-            state = read_json(fixture_root / ".ai" / "runs" / "selftest-head-change" / "run.json")
+            state = read_json(fixture_root / ".project" / "runs" / "selftest-head-change" / "run.json")
 
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertEqual(state["status"], "blocked")
@@ -66,22 +66,27 @@ class HarnessIntegrationFailureSelfTests(unittest.TestCase):
             self.assertIn("blocked_provider_changed_head", events)
 
     def test_verify_retry_limit_blocks_run(self) -> None:
-        announce("integration failure: verify retry limit")
-        with fixture_workspace() as fixture_root:
-            proc = run_standard_pipeline(
-                fixture_root,
-                feature="selftest-retry-limit",
-                mode="verify-always-fail",
-                max_verify_fix_retries=1,
-                command_timeout=90,
-                check=False,
-            )
-            state = read_json(fixture_root / ".ai" / "runs" / "selftest-retry-limit" / "run.json")
+        for pipeline_mode in PIPELINE_MODES:
+            with self.subTest(pipeline_mode=pipeline_mode):
+                feature = f"selftest-{pipeline_mode}-retry-limit"
+                announce(f"integration failure: {pipeline_mode} verify retry limit")
+                with fixture_workspace() as fixture_root:
+                    proc = run_pipeline(
+                        fixture_root,
+                        pipeline_mode=pipeline_mode,
+                        feature=feature,
+                        mode="verify-always-fail",
+                        max_verify_fix_retries=1,
+                        command_timeout=120,
+                        check=False,
+                    )
+                    state = read_json(fixture_root / ".project" / "runs" / feature / "run.json")
 
-            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            self.assertEqual(state["status"], "blocked")
-            self.assertEqual(state.get("verify_fix_retries_used"), 1)
-            self.assertIn("Verify/Fix retry limit reached", blocked_reason(state))
+                    self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                    self.assertEqual(state["status"], "blocked")
+                    self.assertEqual(state.get("pipeline_mode"), pipeline_mode)
+                    self.assertEqual(state.get("verify_fix_retries_used"), 1)
+                    self.assertIn("Verify/Fix retry limit reached", blocked_reason(state))
 
     def test_provider_nonzero_exit_blocks_run(self) -> None:
         announce("integration failure: provider non-zero exit")
@@ -93,7 +98,7 @@ class HarnessIntegrationFailureSelfTests(unittest.TestCase):
                 command_timeout=45,
                 check=False,
             )
-            state = read_json(fixture_root / ".ai" / "runs" / "selftest-provider-nonzero" / "run.json")
+            state = read_json(fixture_root / ".project" / "runs" / "selftest-provider-nonzero" / "run.json")
 
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertEqual(state["status"], "blocked")
@@ -109,7 +114,7 @@ class HarnessIntegrationFailureSelfTests(unittest.TestCase):
                 command_timeout=45,
                 check=False,
             )
-            state = read_json(fixture_root / ".ai" / "runs" / "selftest-provider-silent" / "run.json")
+            state = read_json(fixture_root / ".project" / "runs" / "selftest-provider-silent" / "run.json")
 
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertEqual(state["status"], "blocked")

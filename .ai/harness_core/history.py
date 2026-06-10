@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .context import HarnessRuntime
+
 import hashlib
 import json
 import re
@@ -9,39 +14,40 @@ from pathlib import Path
 from typing import Any
 
 from .errors import HarnessError
+from .json_io import read_json_value_file
 from .status import ResultStatus
 
 
 PC_CANDIDATE_EXTRACTION_MAX_ATTEMPTS = 3
 
 
-def history_summary_path(ctx) -> Path:
+def history_summary_path(ctx: HarnessRuntime) -> Path:
     return ctx.HISTORY_DIR / "summary.md"
 
 
-def history_index_path(ctx) -> Path:
+def history_index_path(ctx: HarnessRuntime) -> Path:
     return ctx.HISTORY_DIR / "index.json"
 
 
-def pc_candidates_path(ctx) -> Path:
+def pc_candidates_path(ctx: HarnessRuntime) -> Path:
     return ctx.PC_CANDIDATES_PATH
 
 
-def project_contract_path(ctx) -> Path:
+def project_contract_path(ctx: HarnessRuntime) -> Path:
     return ctx.PROJECT_CONTRACT_PATH
 
 
-def empty_pc_candidates_store(ctx) -> dict[str, Any]:
+def empty_pc_candidates_store(ctx: HarnessRuntime) -> dict[str, Any]:
     return {"version": ctx.PC_CANDIDATES_SCHEMA_VERSION, "candidates": []}
 
 
-def read_pc_candidates_store(ctx) -> dict[str, Any]:
+def read_pc_candidates_store(ctx: HarnessRuntime) -> dict[str, Any]:
     path = pc_candidates_path(ctx)
     if not path.exists():
         return empty_pc_candidates_store(ctx)
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        parsed = read_json_value_file(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HarnessError(f"Invalid PC candidates JSON: {ctx.rel(path)}: {exc}") from exc
     if not isinstance(parsed, dict):
         raise HarnessError(f"PC candidates file must be a JSON object: {ctx.rel(path)}")
@@ -53,7 +59,7 @@ def read_pc_candidates_store(ctx) -> dict[str, Any]:
     return parsed
 
 
-def write_pc_candidates_store(ctx, store: dict[str, Any]) -> None:
+def write_pc_candidates_store(ctx: HarnessRuntime, store: dict[str, Any]) -> None:
     candidates = store.get("candidates", [])
     if not isinstance(candidates, list):
         candidates = []
@@ -66,7 +72,7 @@ def write_pc_candidates_store(ctx, store: dict[str, Any]) -> None:
     )
 
 
-def pending_pc_candidates(ctx) -> list[dict[str, Any]]:
+def pending_pc_candidates(ctx: HarnessRuntime) -> list[dict[str, Any]]:
     store = read_pc_candidates_store(ctx)
     return [
         item
@@ -75,7 +81,7 @@ def pending_pc_candidates(ctx) -> list[dict[str, Any]]:
     ]
 
 
-def ensure_project_contract_file(ctx) -> None:
+def ensure_project_contract_file(ctx: HarnessRuntime) -> None:
     path = project_contract_path(ctx)
     if path.exists():
         return
@@ -111,7 +117,7 @@ def ensure_project_contract_file(ctx) -> None:
     )
 
 
-def project_contract_prompt_text(ctx) -> str:
+def project_contract_prompt_text(ctx: HarnessRuntime) -> str:
     ensure_project_contract_file(ctx)
     path = project_contract_path(ctx)
     text = path.read_text(encoding="utf-8").strip()
@@ -123,7 +129,7 @@ def project_contract_prompt_text(ctx) -> str:
     return f"## Project Contract\nSource: {ctx.rel(path)}\n\n{text}\n"
 
 
-def warn_pending_pc_candidates_for_new_run(ctx) -> None:
+def warn_pending_pc_candidates_for_new_run(ctx: HarnessRuntime) -> None:
     pending = pending_pc_candidates(ctx)
     if not pending:
         return
@@ -137,8 +143,8 @@ def warn_pending_pc_candidates_for_new_run(ctx) -> None:
         "새 파이프라인은 계속 시작하지만, 시간이 날 때 후보를 검토해 프로젝트 규약을 정리하세요.",
         "",
         ctx.color_text("선택 검토 명령:", "green", "bold"),
-        "  python .ai\\pc_review.py",
-        "  python .ai\\pc_review.py --agent claude  # optional: codex/claude/agy",
+        "  python .ai/pc_review.py",
+        "  python .ai/pc_review.py --agent claude  # optional: codex/claude/agy",
         "",
         ctx.color_text("미정 후보:", "yellow", "bold"),
     ]
@@ -153,7 +159,7 @@ def warn_pending_pc_candidates_for_new_run(ctx) -> None:
     print("\n".join(lines), file=sys.stderr)
 
 
-def ensure_history_store(ctx) -> bool:
+def ensure_history_store(ctx: HarnessRuntime) -> bool:
     initialized = not ctx.HISTORY_DIR.exists()
     ctx.HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     if not history_index_path(ctx).exists():
@@ -172,18 +178,18 @@ def ensure_history_store(ctx) -> bool:
     return initialized
 
 
-def history_timestamp_id(ctx, value: Any) -> str:
+def history_timestamp_id(ctx: HarnessRuntime, value: Any) -> str:
     stamp = re.sub(r"\D+", "", str(value or ""))[:14]
     return stamp or ctx.now_stamp().replace("-", "")
 
 
-def history_event_id(ctx, state: dict[str, Any]) -> str:
+def history_event_id(ctx: HarnessRuntime, state: dict[str, Any]) -> str:
     feature = ctx.slugify(str(state.get("feature_name") or "feature"))
     pipeline = ctx.slugify(str(state.get("pipeline_mode") or ctx.PIPELINE_MODE))
     return f"{history_timestamp_id(ctx, state.get('created_at'))}-{feature}-{pipeline}"
 
 
-def safe_stage_text(ctx, feature: str, stage: str) -> str:
+def safe_stage_text(ctx: HarnessRuntime, feature: str, stage: str) -> str:
     path = ctx.stage_output_path(feature, stage)
     if not path.exists():
         return ""
@@ -193,7 +199,7 @@ def safe_stage_text(ctx, feature: str, stage: str) -> str:
         return ""
 
 
-def load_history_stage_results(ctx, feature: str) -> dict[str, dict[str, Any]]:
+def load_history_stage_results(ctx: HarnessRuntime, feature: str) -> dict[str, dict[str, Any]]:
     results: dict[str, dict[str, Any]] = {}
     for stage in ctx.STAGES:
         result_path = ctx.stage_result_json_path(feature, stage)
@@ -210,7 +216,7 @@ def load_history_stage_results(ctx, feature: str) -> dict[str, dict[str, Any]]:
     return results
 
 
-def history_source_artifacts(ctx, feature: str) -> list[str]:
+def history_source_artifacts(ctx: HarnessRuntime, feature: str) -> list[str]:
     artifacts: list[str] = []
     for stage in ctx.STAGES:
         for path in [ctx.stage_output_path(feature, stage), ctx.stage_result_json_path(feature, stage)]:
@@ -225,7 +231,7 @@ def history_source_artifacts(ctx, feature: str) -> list[str]:
     return sorted(dict.fromkeys(artifacts))
 
 
-def split_event_paths(ctx, value: Any) -> list[str]:
+def split_event_paths(ctx: HarnessRuntime, value: Any) -> list[str]:
     if isinstance(value, list):
         return [ctx.norm_repo_path(str(item)) for item in value if str(item).strip()]
     if not isinstance(value, str):
@@ -234,7 +240,7 @@ def split_event_paths(ctx, value: Any) -> list[str]:
 
 
 def collect_history_changed_files(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     stage_results: dict[str, dict[str, Any]],
 ) -> dict[str, list[str]]:
     paths: list[str] = []
@@ -252,9 +258,9 @@ def collect_history_changed_files(
         path = ctx.norm_repo_path(raw_path)
         if not path or path in {".", "./"}:
             continue
-        if path.startswith(".ai/docs/"):
+        if path.startswith(".project/docs/"):
             bucket = "docs"
-        elif path.startswith(".ai/"):
+        elif path.startswith(".ai/") or path.startswith(".project/"):
             bucket = "harness_artifacts"
         elif ctx.is_test_path(path):
             bucket = "tests"
@@ -267,7 +273,7 @@ def collect_history_changed_files(
     return {key: sorted(value) for key, value in grouped.items() if value}
 
 
-def load_history_verification(ctx, feature: str, stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def load_history_verification(ctx: HarnessRuntime, feature: str, stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
     latest = ctx.latest_verification_result_path(feature)
     if latest.exists():
         parsed = ctx.read_json_file(latest, {})
@@ -306,7 +312,7 @@ def load_history_verification(ctx, feature: str, stage_results: dict[str, dict[s
 
 
 def collect_history_notes(
-    ctx, feature: str,
+    ctx: HarnessRuntime, feature: str,
     stage_results: dict[str, dict[str, Any]],
 ) -> tuple[list[str], list[dict[str, Any]], list[str], list[dict[str, Any]]]:
     implemented: list[str] = []
@@ -409,7 +415,7 @@ def collect_history_notes(
 
 
 def normalize_unresolved_source_item(
-    ctx, item: Any,
+    ctx: HarnessRuntime, item: Any,
     *,
     item_type: str,
     status: str,
@@ -469,7 +475,7 @@ def normalize_unresolved_source_item(
 
 
 def unresolved_items_from_value(
-    ctx, value: Any,
+    ctx: HarnessRuntime, value: Any,
     *,
     item_type: str,
     status: str,
@@ -498,7 +504,7 @@ def unresolved_items_from_value(
 
 
 def collect_history_unresolved_items(
-    ctx, feature: str,
+    ctx: HarnessRuntime, feature: str,
     stage_results: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
@@ -629,13 +635,13 @@ def collect_history_unresolved_items(
     return deduped[:80]
 
 
-def stable_history_id(ctx, prefix: str, *parts: Any) -> str:
+def stable_history_id(ctx: HarnessRuntime, prefix: str, *parts: Any) -> str:
     raw = "\n".join(ctx.compact_history_text(part, max_len=1000) for part in parts)
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
     return f"{prefix}-{digest}"
 
 
-def read_history_index(ctx) -> dict[str, Any]:
+def read_history_index(ctx: HarnessRuntime) -> dict[str, Any]:
     index = ctx.read_json_file(history_index_path(ctx), {"schema_version": ctx.HISTORY_SCHEMA_VERSION, "features": []})
     if not isinstance(index, dict):
         return {"schema_version": ctx.HISTORY_SCHEMA_VERSION, "features": []}
@@ -648,11 +654,11 @@ def read_history_index(ctx) -> dict[str, Any]:
     return index
 
 
-def write_history_index(ctx, index: dict[str, Any]) -> None:
+def write_history_index(ctx: HarnessRuntime, index: dict[str, Any]) -> None:
     ctx.write_json_file(history_index_path(ctx), index)
 
 
-def compact_history_titles(ctx, items: list[Any], max_items: int = 5, max_len: int = 180) -> list[str]:
+def compact_history_titles(ctx: HarnessRuntime, items: list[Any], max_items: int = 5, max_len: int = 180) -> list[str]:
     if max_items <= 0:
         return []
     titles: list[str] = []
@@ -675,14 +681,14 @@ def compact_history_titles(ctx, items: list[Any], max_items: int = 5, max_len: i
     return titles
 
 
-def history_document_path(ctx, feature: str) -> str:
+def history_document_path(ctx: HarnessRuntime, feature: str) -> str:
     if not ctx.DOCUMENT_STAGE:
         return ""
     doc = ctx.expected_docx_path(feature)
     return ctx.rel(doc) if doc.exists() else ""
 
 
-def upsert_history_index_entry(ctx, entry: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+def upsert_history_index_entry(ctx: HarnessRuntime, entry: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     index = read_history_index(ctx)
     features = index.setdefault("features", [])
     feature = str(entry.get("feature") or "")
@@ -700,8 +706,9 @@ def upsert_history_index_entry(ctx, entry: dict[str, Any]) -> tuple[dict[str, An
     return index, not replaced
 
 
-def render_history_summary(ctx, index: dict[str, Any]) -> None:
-    features = index.get("features") if isinstance(index.get("features"), list) else []
+def render_history_summary(ctx: HarnessRuntime, index: dict[str, Any]) -> None:
+    raw_features = index.get("features")
+    features = raw_features if isinstance(raw_features, list) else []
     complete_features = [item for item in features if isinstance(item, dict)]
     lines = [
         "# 프로젝트 히스토리",
@@ -725,13 +732,14 @@ def render_history_summary(ctx, index: dict[str, Any]) -> None:
             f"{entry.get('feature', '')} "
             f"({entry.get('pipeline', '')}, {entry.get('status', '')}, verify={verification})"
         )
-        implemented = entry.get("implemented") if isinstance(entry.get("implemented"), list) else []
+        raw_implemented = entry.get("implemented")
+        implemented = raw_implemented if isinstance(raw_implemented, list) else []
         for item in implemented[:3]:
             lines.append(f"  - {item}")
     history_summary_path(ctx).write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
-def record_project_history(ctx, state: dict[str, Any]) -> dict[str, Any]:
+def record_project_history(ctx: HarnessRuntime, state: dict[str, Any]) -> dict[str, Any]:
     initialized = ensure_history_store(ctx)
     feature = str(state["feature_name"])
     stage_results = load_history_stage_results(ctx, feature)
@@ -795,11 +803,11 @@ def record_project_history(ctx, state: dict[str, Any]) -> dict[str, Any]:
     return state["history"]
 
 
-def should_extract_pc_candidates(ctx, state: dict[str, Any]) -> bool:
+def should_extract_pc_candidates(ctx: HarnessRuntime, state: dict[str, Any]) -> bool:
     return ctx.pipeline_extracts_pc_candidates(state.get("pipeline_mode") or ctx.PIPELINE_MODE)
 
 
-def pc_candidate_source_artifact_text(ctx, feature: str, max_chars_per_file: int = 8000) -> str:
+def pc_candidate_source_artifact_text(ctx: HarnessRuntime, feature: str, max_chars_per_file: int = 8000) -> str:
     blocks: list[str] = []
     for artifact in history_source_artifacts(ctx, feature):
         path = ctx.ROOT / artifact
@@ -816,7 +824,7 @@ def pc_candidate_source_artifact_text(ctx, feature: str, max_chars_per_file: int
 
 
 def build_pc_candidate_extraction_prompt(
-    ctx, state: dict[str, Any],
+    ctx: HarnessRuntime, state: dict[str, Any],
     output_json_path: Path | None = None,
 ) -> str:
     feature = str(state["feature_name"])
@@ -931,7 +939,7 @@ If there are no worthwhile candidates, return {{"candidates": []}}.
 
 
 def normalize_pc_candidate(
-    ctx, raw: dict[str, Any],
+    ctx: HarnessRuntime, raw: dict[str, Any],
     state: dict[str, Any],
     created_at: str,
     provider: str,
@@ -969,7 +977,7 @@ def normalize_pc_candidate(
     }
 
 
-def append_pc_candidates(ctx, candidates: list[dict[str, Any]], state: dict[str, Any]) -> dict[str, Any]:
+def append_pc_candidates(ctx: HarnessRuntime, candidates: list[dict[str, Any]], state: dict[str, Any]) -> dict[str, Any]:
     store = read_pc_candidates_store(ctx)
     existing_ids = {
         str(item.get("id"))
@@ -1008,7 +1016,7 @@ def _pc_candidate_run_window(result: dict[str, Any]) -> tuple[float, float] | No
     return started.timestamp(), ended.timestamp()
 
 
-def _parse_pc_candidate_json_path(ctx, path: Path) -> dict[str, Any]:
+def _parse_pc_candidate_json_path(ctx: HarnessRuntime, path: Path) -> dict[str, Any]:
     try:
         output_text = path.read_text(encoding="utf-8")
     except OSError:
@@ -1019,7 +1027,7 @@ def _parse_pc_candidate_json_path(ctx, path: Path) -> dict[str, Any]:
 
 
 def _pc_candidate_capture_fallback_json(
-    ctx, output_path: Path,
+    ctx: HarnessRuntime, output_path: Path,
     result: dict[str, Any],
 ) -> dict[str, Any]:
     match = re.match(r"^(pc_candidates_[A-Za-z0-9_.-]+)_attempt(\d+)_result\.json$", output_path.name)
@@ -1061,7 +1069,7 @@ def _pc_candidate_capture_fallback_json(
     return {}
 
 
-def parse_pc_candidate_extraction_result(ctx, result: dict[str, Any]) -> list[Any]:
+def parse_pc_candidate_extraction_result(ctx: HarnessRuntime, result: dict[str, Any]) -> list[Any]:
     if result.get("returncode") != 0 or result.get("timed_out"):
         raise HarnessError(
             "PC candidate extraction provider failed. "
@@ -1088,7 +1096,7 @@ def parse_pc_candidate_extraction_result(ctx, result: dict[str, Any]) -> list[An
 
 
 def pc_candidate_extraction_warning(
-    ctx, provider: str,
+    ctx: HarnessRuntime, provider: str,
     failures: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
@@ -1106,7 +1114,7 @@ def pc_candidate_extraction_warning(
     }
 
 
-def extract_project_contract_candidates(ctx, state: dict[str, Any]) -> dict[str, Any]:
+def extract_project_contract_candidates(ctx: HarnessRuntime, state: dict[str, Any]) -> dict[str, Any]:
     if not should_extract_pc_candidates(ctx, state):
         return {"status": "skipped", "reason": "pipeline does not extract PC candidates"}
 

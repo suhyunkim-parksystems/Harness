@@ -4,17 +4,17 @@ role: "implementation"
 preferred_model: "Claude"
 model_policy: "preferred_not_hard_block"
 required_inputs:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_plan.md"
 outputs:
-  - ".ai/features/[기능명]/02_dev.md"
+  - ".project/features/[기능명]/02_dev.md"
 allowed_writes:
   - "production_code"
   - "tests"
-  - ".ai/features/[기능명]/02_dev.md"
+  - ".project/features/[기능명]/02_dev.md"
 forbidden_writes:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_plan.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 commit_owner: "harness"
@@ -50,15 +50,15 @@ default_next_stage: "03_review"
 
 ## 작업 순서
 
-1. `.ai/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 제외 항목, 위험도를 파악한다.
-2. `.ai/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 구현 단계, 위험 구간, 새 의존성, 테스트 전략, Git 기준점을 파악한다.
+1. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 제외 항목, 위험도를 파악한다.
+2. `.project/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 구현 단계, 위험 구간, 새 의존성, 테스트 전략, Git 기준점을 파악한다.
 3. 작업 시작 전 현재 `HEAD`를 `base_commit`으로 기록한다. 01_plan.md에 `base_commit`이 있으면 그 값을 우선한다.
 4. 계획대로 구현한다.
 5. 계획에 없는 작은 결정은 코드베이스 컨벤션에 맞춰 합리적으로 결정하고 `02_dev.md`에 기록한다.
 6. 계획과 충돌하는 변경이 필요하면 구현을 멈추고 `계획 변경 필요` 블록을 작성한다.
 7. 기능 구현과 함께 계획된 테스트를 작성한다.
 8. 가능한 테스트를 실행하고 결과를 기록한다.
-9. 구현이 끝나면 `.ai/features/[기능명]/02_dev.md`를 작성한다.
+9. 구현이 끝나면 `.project/features/[기능명]/02_dev.md`를 작성한다.
 10. 이 stage 커밋에 포함되어야 할 파일 범위를 `02_dev.md`에 기록한다. 범위에는 반드시 `02_dev.md`, 구현 코드, 구현 테스트가 포함되어야 한다.
 11. `git commit`, `git reset`, `git checkout`, `git rebase`, `git push`를 실행하지 않는다. 실제 커밋은 하네스가 만든다.
 12. 하네스가 커밋할 수 있도록 워킹트리를 커밋 가능한 상태로 남기고, `harness_commit_required: true`와 추천 커밋 메시지를 기록한다. 추천 커밋 메시지는 `[기능명][YYYYMMDD-hhmmss][02_develop]` 포맷을 사용한다.
@@ -69,7 +69,7 @@ default_next_stage: "03_review"
 
 ## 계획 변경 필요 형식
 
-계획을 그대로 수행할 수 없으면 `.ai/features/[기능명]/02_dev.md`에 아래 블록을 작성하고 멈춘다.
+계획을 그대로 수행할 수 없으면 `.project/features/[기능명]/02_dev.md`에 아래 블록을 작성하고 멈춘다.
 
 ```markdown
 ## 계획 변경 필요
@@ -106,7 +106,7 @@ default_next_stage: "03_review"
 
 ## 기록 양식
 
-구현 완료 후 `.ai/features/[기능명]/02_dev.md`에 아래 형식으로 작성한다.
+구현 완료 후 `.project/features/[기능명]/02_dev.md`에 아래 형식으로 작성한다.
 
 ```markdown
 # 02_dev - [기능명]
@@ -118,9 +118,9 @@ default_next_stage: "03_review"
 - 이 기능이 무엇을 하는지 한두 줄로 요약
 
 ## 변경 파일
-- .ai/features/[기능명]/00_spec.md (입력 / 변경 금지)
-- .ai/features/[기능명]/01_plan.md (입력 / 변경 금지)
-- .ai/features/[기능명]/02_dev.md (신규 / 수정)
+- .project/features/[기능명]/00_spec.md (입력 / 변경 금지)
+- .project/features/[기능명]/01_plan.md (입력 / 변경 금지)
+- .project/features/[기능명]/02_dev.md (신규 / 수정)
 - src/path/to/file.py (신규 / 수정 / 삭제)
 - src/path/to/another.py (신규 / 수정 / 삭제)
 
@@ -160,7 +160,7 @@ default_next_stage: "03_review"
 - commit_created_by_model: false
 - commit_message_suggestion: [기능명][YYYYMMDD-hhmmss][02_develop]
 - commit_scope:
-  - .ai/features/[기능명]/02_dev.md
+  - .project/features/[기능명]/02_dev.md
   - 구현 코드와 구현 테스트
 - pre_commit_diff_command: git diff [base_commit]
 - changed_files:
@@ -173,7 +173,7 @@ default_next_stage: "03_review"
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/02_dev.md
+  - .project/features/[기능명]/02_dev.md
 - changed_files:
 - harness_commit_required: true
 - commit_created_by_model: false

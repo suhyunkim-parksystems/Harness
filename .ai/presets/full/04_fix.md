@@ -4,25 +4,25 @@ role: "review_fix"
 preferred_model: "Claude"
 model_policy: "preferred_not_hard_block"
 required_inputs:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_plan.md"
-  - ".ai/features/[기능명]/02_dev.md"
-  - ".ai/features/[기능명]/03_review.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/02_dev.md"
+  - ".project/features/[기능명]/03_review.md"
 optional_inputs:
-  - ".ai/features/[기능명]/05_verify.md"
-  - ".ai/runs/[기능명]/verification/latest.json"
+  - ".project/features/[기능명]/05_verify.md"
+  - ".project/runs/[기능명]/verification/latest.json"
 outputs:
-  - ".ai/features/[기능명]/04_fix.md"
+  - ".project/features/[기능명]/04_fix.md"
 allowed_writes:
   - "production_code"
   - "tests"
-  - ".ai/features/[기능명]/04_fix.md"
+  - ".project/features/[기능명]/04_fix.md"
 forbidden_writes:
-  - ".ai/features/[기능명]/00_spec.md"
-  - ".ai/features/[기능명]/01_plan.md"
-  - ".ai/features/[기능명]/02_dev.md"
-  - ".ai/features/[기능명]/03_review.md"
-  - ".ai/features/[기능명]/05_verify.md"
+  - ".project/features/[기능명]/00_spec.md"
+  - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/02_dev.md"
+  - ".project/features/[기능명]/03_review.md"
+  - ".project/features/[기능명]/05_verify.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 retry_commit_policy: "amend_existing_stage_04"
@@ -46,7 +46,7 @@ default_next_stage: "05_verify"
 - 다른 모델이 이 단계를 실행하더라도 중지하지 않는다.
 - 담당 모델이 권장 모델과 다르면 `04_fix.md`의 `## 단계 결과`에 `model_mismatch: true`와 실제 실행 모델을 기록한다.
 - 이 단계는 3단계 리뷰 지적과, 존재하는 경우 5단계 검증 실패 항목을 반영해 코드를 개선하는 단계이다.
-- 5단계가 하네스 검증 명령 실패로 되돌아온 경우 `.ai/runs/[기능명]/verification/latest.json`을 반드시 읽고, 실패한 명령의 stdout/stderr 경로와 returncode를 수정 근거로 사용한다.
+- 5단계가 하네스 검증 명령 실패로 되돌아온 경우 `.project/runs/[기능명]/verification/latest.json`을 반드시 읽고, 실패한 명령의 stdout/stderr 경로와 returncode를 수정 근거로 사용한다.
 
 ---
 
@@ -60,18 +60,18 @@ default_next_stage: "05_verify"
 ## 작업 순서
 
 1. 요청사항이 개선 불가능할 정도로 모호한 경우에만 `status: NEEDS_USER`로 멈춘다.
-2. `.ai/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 위험도를 파악한다.
-3. `.ai/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 위험 구간, 의존성, 테스트 전략을 파악한다.
-4. `.ai/features/[기능명]/02_dev.md`를 읽고 원래 구현 의도와 Git 정보를 확인한다.
-5. `.ai/features/[기능명]/03_review.md`를 읽고 리뷰 내용을 확인한다.
-6. `.ai/features/[기능명]/05_verify.md`가 존재하고 최종 판정이 `FAIL`이면, 실패 항목과 `fix_inputs`를 03_review 이후의 추가 지적 사항으로 취급하여 우선 처리한다.
-7. `.ai/runs/[기능명]/verification/latest.json`이 존재하면 하네스 검증 결과를 읽는다. `status: FAIL`이거나 `failed_commands`가 비어 있지 않으면 `05_verify.md`의 모델 판정보다 하네스 검증 결과를 우선한다.
+2. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 위험도를 파악한다.
+3. `.project/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 위험 구간, 의존성, 테스트 전략을 파악한다.
+4. `.project/features/[기능명]/02_dev.md`를 읽고 원래 구현 의도와 Git 정보를 확인한다.
+5. `.project/features/[기능명]/03_review.md`를 읽고 리뷰 내용을 확인한다.
+6. `.project/features/[기능명]/05_verify.md`가 존재하고 최종 판정이 `FAIL`이면, 실패 항목과 `fix_inputs`를 03_review 이후의 추가 지적 사항으로 취급하여 우선 처리한다.
+7. `.project/runs/[기능명]/verification/latest.json`이 존재하면 하네스 검증 결과를 읽는다. `status: FAIL`이거나 `failed_commands`가 비어 있지 않으면 `05_verify.md`의 모델 판정보다 하네스 검증 결과를 우선한다.
 8. 각 지적 사항을 `수용 / 거부 / 보류 / 사용자 판단 요청`으로 분류한다.
 9. 수용한 항목에 대해 코드를 수정한다.
 10. 리뷰 또는 검증에서 누락 테스트를 지적했다면 루트 `tests/` 하위에 테스트를 추가한다.
 11. 05_verify에서 추가한 테스트 파일이 있으면 삭제하지 말고 유지한다.
 12. 가능한 테스트를 실행하고 결과를 기록한다.
-13. 결과를 `.ai/features/[기능명]/04_fix.md`에 작성한다.
+13. 결과를 `.project/features/[기능명]/04_fix.md`에 작성한다.
 14. 최초 04_fix 실행이면 코드 변경이 없더라도 리뷰 처리 기록과 `04_fix.md`를 포함하여 하네스가 `04_fix` stage 커밋을 만들 수 있게 워킹트리를 커밋 가능한 상태로 남긴다. 추천 커밋 메시지는 `[기능명][YYYYMMDD-hhmmss][04_fix]` 포맷을 사용한다.
 15. 05_verify 실패 후 재진입한 04_fix이면 하네스가 기존 04_fix 커밋을 amend할 수 있게 변경을 남기고 `commit_mode_suggestion: amend_existing_04`를 기록한다.
 16. 수용한 코드 변경이 없거나 모든 항목을 거부/보류하여 프로덕션 코드 변경이 없으면 `no_code_changes: true`를 기록한다.
@@ -147,7 +147,7 @@ default_next_stage: "05_verify"
 
 ## 기록 양식
 
-개선 완료 후 `.ai/features/[기능명]/04_fix.md`에 아래 형식으로 작성한다.
+개선 완료 후 `.project/features/[기능명]/04_fix.md`에 아래 형식으로 작성한다.
 
 ```markdown
 # 04_fix - [기능명]
@@ -226,7 +226,7 @@ default_next_stage: "05_verify"
 - blocking_reason: 없음
 - risk_level: low / medium / high
 - produced_files:
-  - .ai/features/[기능명]/04_fix.md
+  - .project/features/[기능명]/04_fix.md
 - changed_files:
 - harness_commit_required: true
 - commit_created_by_model: false

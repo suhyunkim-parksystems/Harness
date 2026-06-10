@@ -100,7 +100,7 @@ def markdown_sections(text: str) -> dict[str, str]:
     for line in text.splitlines():
         match = re.match(r"^##+\s+(.+?)\s*$", line)
         if match:
-            current = match.group(1).strip()
+            current = str(match.group(1) or "").strip()
             sections.setdefault(current, [])
             continue
         if current:

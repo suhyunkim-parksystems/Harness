@@ -41,11 +41,11 @@ def _workflow_context(
 
     def write_handoff(ctx: dict[str, Any], run_state: dict[str, Any], reason: str, **kwargs: Any) -> Path:
         calls["handoffs"].append({"reason": reason, **kwargs})
-        return Path(".ai/runs/demo/handoff.md")
+        return Path(".project/runs/demo/handoff.md")
 
     def generate_prompt(run_state: dict[str, Any], stage: str, **kwargs: Any) -> Path:
         calls["prompts"].append({"stage": stage, **kwargs})
-        run_state["current_prompt"] = f".ai/runs/demo/prompts/{stage}_attempt1.md"
+        run_state["current_prompt"] = f".project/runs/demo/prompts/{stage}_attempt1.md"
         # The real generate_prompt persists state before returning
         # (stage_runtime.py:275); mirror that so saved-state snapshots are
         # faithful for atomicity assertions.
@@ -56,7 +56,7 @@ def _workflow_context(
         ctx: dict[str, Any], feature: str, stage: str, run_state: dict[str, Any]
     ) -> tuple[Path, str, dict[str, Any]]:
         return (
-            Path(f".ai/features/{feature}/{stage}.md"),
+            Path(f".project/features/{feature}/{stage}.md"),
             "",
             result,
         )
@@ -80,7 +80,7 @@ def _workflow_context(
         "record_project_history": lambda run_state: {
             "status": "recorded",
             "event_id": "selftest",
-            "index": ".ai/history/index.json",
+            "index": ".project/history/index.json",
         },
         "log_event": log_event,
         "save_state": save_state,

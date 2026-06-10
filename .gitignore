@@ -35,11 +35,6 @@ venv/
 env/
 *.egg-info/
 
-# Harness verification scratch
-.ai/runs/.tmp/
-.ai/runs/_pytest_tmp/
-.ai/runs/*/verification/tmp/
-
 # Node / frontend
 node_modules/
 .next/
@@ -75,3 +70,19 @@ out/
 # Go / vendored generated dependencies
 vendor/
 else/
+
+# Harness project state is versioned by default.
+!.project/
+!.project/**
+
+# Harness verification scratch
+.project/runs/.tmp/
+.project/runs/_pytest_tmp/
+.project/runs/*/verification/tmp/
+
+# Harness self-test scratch
+.ai/.selftest_tmp/
+
+# Orchestrate live batch state (status is written back into this file, so it is
+# a runtime artifact, not source). Use batch.example.json as the tracked template.
+batch.json
