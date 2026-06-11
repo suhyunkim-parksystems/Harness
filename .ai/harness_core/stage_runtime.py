@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import Any
 from . import pipeline
 from .errors import HarnessError
 from .json_io import loads_json_text, read_json_value_file
+from .process import kill_process_tree
 from .status import ResultStatus, RunStatus
 
 
@@ -474,15 +476,14 @@ def stage_artifact_completion_candidate(
 def stop_provider_after_artifact_completion(proc: subprocess.Popen[str]) -> int | None:
     if proc.poll() is not None:
         return proc.returncode
+    # Give the direct child a brief chance to exit on its own, then kill the
+    # whole tree -- on Windows terminate()/kill() only reach the .cmd shim and
+    # leave the real agent (node) running, racing the harness's next commit.
     try:
         proc.terminate()
         proc.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired):
-        try:
-            proc.kill()
-        except OSError:
-            pass
-        proc.wait()
+        kill_process_tree(proc)
     return proc.returncode
 
 
@@ -603,10 +604,25 @@ def _handle_provider_timeout(
     stdout_path: Path,
     stderr_path: Path,
     cli_log_path: Path,
+    before_head: str = "",
 ) -> dict[str, Any]:
-    proc.kill()
-    proc.wait()
+    # Kill the whole tree, not just the .cmd shim, so a hung agent cannot keep
+    # editing the repo (or committing) after we declare a timeout.
+    kill_process_tree(proc)
     elapsed = round(time.time() - started, 2)
+    # H6: the normal-exit path checks for provider-created commits, but a hung
+    # provider that committed before stalling would otherwise escape the guard
+    # and be silently absorbed by the next retry's fresh baseline.
+    if before_head:
+        after_head = ctx.safe_git_head()
+        if git_head_changed(ctx, before_head, after_head):
+            return _block_provider_changed_head(
+                ctx,
+                state,
+                stage=stage,
+                before_head=before_head,
+                after_head=after_head,
+            )
     reason = provider_failure_reason(
         ctx,
         state,
@@ -890,11 +906,32 @@ def execute_current_prompt(ctx: HarnessRuntime, state: dict[str, Any], timeout_s
             encoding="utf-8",
             errors="replace",
         )
-        if proc.stdin and not prompt_in_command:
-            proc.stdin.write(prompt_text)
-            proc.stdin.close()
-        elif proc.stdin:
-            proc.stdin.close()
+        # Feed the prompt on a background thread. A blocking write on the main
+        # thread (a) crashes the harness with BrokenPipeError if the provider
+        # exits before reading stdin (auth banner, bad flag), and (b) deadlocks
+        # forever once the prompt exceeds the OS pipe buffer if the provider
+        # never drains stdin -- the timeout loop below would never be reached.
+        # Off-thread, the write either completes or dies quietly while the poll
+        # loop owns timeout/heartbeat/salvage.
+        def _feed_stdin(pipe: Any, payload: str) -> None:
+            try:
+                if payload:
+                    pipe.write(payload)
+            except (OSError, ValueError):
+                # Provider closed stdin / exited early; the poll loop handles it.
+                pass
+            finally:
+                try:
+                    pipe.close()
+                except (OSError, ValueError):
+                    pass
+
+        if proc.stdin:
+            payload = prompt_text if not prompt_in_command else ""
+            stdin_thread = threading.Thread(
+                target=_feed_stdin, args=(proc.stdin, payload), daemon=True
+            )
+            stdin_thread.start()
 
         last_heartbeat = started
         last_stdout_size = 0
@@ -951,6 +988,7 @@ def execute_current_prompt(ctx: HarnessRuntime, state: dict[str, Any], timeout_s
                     stdout_path=stdout_path,
                     stderr_path=stderr_path,
                     cli_log_path=cli_log_path,
+                    before_head=before_head,
                 )
             if now - last_heartbeat >= ctx.DEFAULT_PROVIDER_HEARTBEAT_SECONDS:
                 last_stdout_size, last_stderr_size = print_provider_heartbeat(ctx,

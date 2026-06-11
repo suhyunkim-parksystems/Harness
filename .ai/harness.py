@@ -19,6 +19,10 @@ if str(HARNESS_DIR) not in sys.path:
     sys.path.insert(0, str(HARNESS_DIR))
 
 from harness_core.docx_validation import validate_docx_file as core_validate_docx_file
+from harness_core.schemas_validation import validate_schemas_file as core_validate_schemas_file
+from harness_core.schemas_validation import (
+    validate_schemas_conformance_file as core_validate_schemas_conformance_file,
+)
 from harness_core.console import (
     color_text,
     event_line_for_console,
@@ -29,8 +33,14 @@ from harness_core.console import (
 from harness_core.context import HarnessContext, HarnessRuntime
 from harness_core.errors import HarnessError
 from harness_core.frontmatter import parse_frontmatter, parse_scalar
-from harness_core.json_io import read_json_file, read_json_value_file, write_json_file
+from harness_core.json_io import (
+    read_json_file,
+    read_json_value_file,
+    replace_with_retry,
+    write_json_file,
+)
 from harness_core.status import RunStatus
+from harness_core import cross_validation as cross_validation_core
 from harness_core import deep_thinking as deep_thinking_core
 from harness_core import history as history_core
 from harness_core import pipeline as pipeline_core
@@ -109,6 +119,9 @@ def apply_pipeline(mode: str) -> None:
     g["VERIFY_RETRY_TARGET_STAGE"] = config.verify_retry_target_stage
     g["FIX_STAGE"] = config.fix_stage
     g["DOCUMENT_STAGE"] = config.document_stage
+    g["PLAN_STAGE"] = config.plan_stage
+    g["PLAN_SCHEMAS_REQUIRED"] = config.plan_schemas_required
+    g["SCHEMAS_CONFORMANCE_REQUIRED"] = config.schemas_conformance_required
 
 
 apply_pipeline("full")
@@ -403,6 +416,10 @@ def git_changed_paths() -> list[str]:
     return process_core.git_changed_paths(ROOT)
 
 
+def git_show_file(ref: str, rel_path: str) -> bytes | None:
+    return process_core.git_show_file(ROOT, ref, rel_path)
+
+
 def file_hash(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:
@@ -593,33 +610,41 @@ def run_text_provider_prompt(
         raise HarnessError(f"Provider executable not found for {provider}: {command[0]}")
 
     started = time.time()
+    # Popen (not subprocess.run) so a timeout can kill the whole process tree
+    # before reading remaining output. subprocess.run's internal timeout handling
+    # kills only the direct child then calls communicate() with no timeout; on
+    # Windows the surviving grandchild (node behind a .cmd shim) holds the pipe
+    # handles open, so that recovery read blocks forever -- turning the timeout
+    # into an unbounded hang.
+    proc = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        stdin=None if prompt_in_command else subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     try:
-        proc = subprocess.run(
-            command,
-            cwd=ROOT,
+        stdout_text, stderr_text = proc.communicate(
             input=None if prompt_in_command else prompt_text,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             timeout=timeout_seconds,
-            check=False,
         )
         elapsed = round(time.time() - started, 2)
-        stdout_text = proc.stdout or ""
-        stderr_text = proc.stderr or ""
+        stdout_text = stdout_text or ""
+        stderr_text = stderr_text or ""
         timed_out = False
         returncode = proc.returncode
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
+        process_core.kill_process_tree(proc)
+        try:
+            stdout_text, stderr_text = proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            stdout_text, stderr_text = "", ""
         elapsed = round(time.time() - started, 2)
-        stdout_text = exc.stdout or ""
-        stderr_text = exc.stderr or ""
-        if isinstance(stdout_text, bytes):
-            stdout_text = stdout_text.decode("utf-8", errors="replace")
-        if isinstance(stderr_text, bytes):
-            stderr_text = stderr_text.decode("utf-8", errors="replace")
-        stderr_text = str(stderr_text) + f"\nTimed out after {timeout_seconds} seconds.\n"
+        stdout_text = stdout_text or ""
+        stderr_text = (stderr_text or "") + f"\nTimed out after {timeout_seconds} seconds.\n"
         timed_out = True
         returncode = None
 
@@ -843,10 +868,12 @@ def save_state(state: dict[str, Any]) -> None:
     # os.replace is atomic on both POSIX and Windows, so a crash, power loss,
     # or disk-full condition can never leave a half-written run.json behind:
     # either the old file survives intact or the new one fully takes its place.
+    # replace_with_retry absorbs transient Windows EACCES (antivirus/indexer
+    # briefly holding the file) without giving up atomicity.
     tmp = path.parent / (path.name + ".tmp")
     try:
         tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp, path)
+        replace_with_retry(tmp, path)
     except BaseException:
         try:
             tmp.unlink()
@@ -1430,6 +1457,7 @@ def create_run(
     deep_thinking: bool = False,
     performance: Any | None = None,
     strategy: Any | None = None,
+    cross_validation: bool = False,
 ) -> dict[str, Any]:
     return workflow_core.create_run(_ctx(),
         request,
@@ -1439,6 +1467,7 @@ def create_run(
         deep_thinking,
         performance,
         strategy,
+        cross_validation,
     )
 
 
@@ -1508,6 +1537,22 @@ def validate_docx_file(path: Path) -> str | None:
 
 def validate_document_stage_artifacts(feature: str) -> str | None:
     return workflow_core.validate_document_stage_artifacts(_ctx(), feature)
+
+
+def feature_schemas_path(feature: str) -> Path:
+    return feature_dir(feature) / "schemas.json"
+
+
+def validate_feature_schemas(feature: str) -> str | None:
+    path = feature_schemas_path(feature)
+    return core_validate_schemas_file(path, feature=feature, display_path=rel(path))
+
+
+def validate_feature_schemas_conformance(feature: str) -> tuple[str | None, list[str]]:
+    path = feature_schemas_path(feature)
+    return core_validate_schemas_conformance_file(
+        path, ROOT, feature=feature, display_path=rel(path)
+    )
 
 
 def block_state(state: dict[str, Any], stage: str, reason: str, next_stage: str | None = None) -> None:
@@ -1853,17 +1898,31 @@ def print_todo(feature: str | None = None) -> None:
 
 
 def cleanup_run(feature: str, keep_feature: bool = False) -> None:
-    targets = [run_dir(feature)]
+    # The feature must be a plain slug. Without this, "cleanup .." resolves to
+    # .project and "cleanup ../.." to the repo root, and the old guard below
+    # (which permitted resolved == root) would rmtree the entire repository.
+    if not validate_slug(feature):
+        raise HarnessError(
+            f"Invalid feature name for cleanup: {feature!r}. "
+            "Expected a slug like 'my-feature' (no path separators or '..')."
+        )
+    root = ROOT.resolve()
+    runs_root = RUNS_DIR.resolve()
+    features_root = FEATURES_DIR.resolve()
+    targets = [(run_dir(feature), runs_root)]
     if not keep_feature:
-        targets.append(feature_dir(feature))
-    for target in targets:
+        targets.append((feature_dir(feature), features_root))
+    for target, expected_parent in targets:
         if not target.exists():
             continue
         resolved = target.resolve()
-        root = ROOT.resolve()
-        if root not in resolved.parents and resolved != root:
-            raise HarnessError(f"Refusing to remove path outside repo: {resolved}")
-        shutil.rmtree(resolved)
+        # Only ever delete a direct child of the runs/features directory, and
+        # never those directories themselves or anything at/above the root.
+        if resolved == root or resolved == expected_parent or resolved.parent != expected_parent:
+            raise HarnessError(f"Refusing to remove unexpected path: {resolved}")
+        # rmtree_robust: a cross-validation run leaves a blind git clone under
+        # the run dir whose object files are read-only on Windows.
+        cross_validation_core.rmtree_robust(resolved)
         print(f"removed: {resolved}")
 
 
@@ -2065,6 +2124,17 @@ def build_parser() -> argparse.ArgumentParser:
                 "highest cost, for the heaviest work."
             ),
         )
+    if pipeline_core.supports_cross_validation(PIPELINE_MODE):
+        run.add_argument(
+            "--cross-validation",
+            dest="cross_validation",
+            action="store_true",
+            help=(
+                "Run a blind acceptance-test track (independent provider, isolated "
+                "from the implementation) in parallel and only auto-pass when the "
+                "tracks converge CLEAN. Requires three distinct available providers."
+            ),
+        )
     add_decision_mode_args(
         run,
         defaults_help="Use model-recommended defaults for ambiguous decisions instead of stopping for user input.",
@@ -2195,6 +2265,7 @@ def main(argv: list[str] | None = None) -> int:
                 deep_thinking=bool(getattr(args, "deep_thinking", False)),
                 performance=args.performance,
                 strategy=getattr(args, "strategy", None),
+                cross_validation=bool(getattr(args, "cross_validation", False)),
             )
             state = auto_drive(
                 state,

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -217,7 +218,20 @@ def safe_rmtree(path: Path) -> None:
         os.chmod(failed_path, 0o700)
         func(failed_path)
 
-    shutil.rmtree(target, onerror=remove_readonly)
+    # A run blocked mid-pipeline can leave a short-lived orphan child (git /
+    # fake provider spawned by the cross-validation track thread) holding a
+    # handle inside the fixture for a few seconds; retry instead of failing.
+    last_error: PermissionError | None = None
+    for _ in range(8):
+        try:
+            shutil.rmtree(target, onerror=remove_readonly)
+            last_error = None
+            break
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(2)
+    if last_error is not None:
+        raise last_error
     try:
         parent.rmdir()
     except OSError:
@@ -263,6 +277,7 @@ def run_pipeline(
     timeout_seconds: int = 30,
     command_timeout: int = 90,
     check: bool = True,
+    extra_args: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     config = pipeline_core.PIPELINES[pipeline_mode]
     return run(
@@ -283,6 +298,7 @@ def run_pipeline(
             str(max_verify_fix_retries),
             "--performance",
             "lite",
+            *(extra_args or []),
         ],
         fixture_root,
         timeout=command_timeout,

@@ -174,5 +174,171 @@ class StageRuntimeSelfTests(unittest.TestCase):
             self.assertTrue(rendered.endswith("\n"))
 
 
+class StageResultParsingSelfTests(unittest.TestCase):
+    """Result-parsing helpers called directly on stage_runtime with a minimal
+    context: parse_result_json_from_text / find_stage_result /
+    parse_result_scalar read no ctx member, so an empty HarnessContext works;
+    read_stage_result_json only uses ctx.rel for error messages."""
+
+    def setUp(self) -> None:
+        self.ctx = HarnessContext.from_namespace({})
+
+    def test_parse_result_json_clean_object(self) -> None:
+        result = stage_runtime.parse_result_json_from_text(
+            self.ctx, '{"status": "PASS", "next_stage": "done"}'
+        )
+
+        self.assertEqual(result, {"status": "PASS", "next_stage": "done"})
+
+    def test_parse_result_json_object_embedded_in_prose(self) -> None:
+        text = 'provider chatter before\nresult: {"status": "FAIL", "next_stage": "04_fix"} trailing words'
+
+        result = stage_runtime.parse_result_json_from_text(self.ctx, text)
+
+        self.assertEqual(result, {"status": "FAIL", "next_stage": "04_fix"})
+
+    def test_parse_result_json_two_concatenated_objects_returns_empty(self) -> None:
+        # NOTE: pins current behavior — without a fence the parser slices from
+        # the first "{" to the last "}", so '{"a": 1} {"b": 2}' becomes a single
+        # invalid JSON document ("Extra data") and the helper returns {} rather
+        # than either object.
+        result = stage_runtime.parse_result_json_from_text(self.ctx, '{"a": 1} {"b": 2}')
+
+        self.assertEqual(result, {})
+
+    def test_parse_result_json_prefers_fenced_block_over_bare_braces(self) -> None:
+        text = (
+            'noise with braces {"status": "IGNORED"}\n'
+            "```json\n"
+            '{"status": "PASS", "next_stage": "done"}\n'
+            "```\n"
+        )
+
+        result = stage_runtime.parse_result_json_from_text(self.ctx, text)
+
+        self.assertEqual(result, {"status": "PASS", "next_stage": "done"})
+
+    def test_parse_result_json_truncated_returns_empty(self) -> None:
+        # NOTE: pins fallback — truncated JSON without a closing brace has no
+        # extractable {...} span, so the helper returns {}.
+        result = stage_runtime.parse_result_json_from_text(
+            self.ctx, '{"status": "PASS", "next_stage": '
+        )
+
+        self.assertEqual(result, {})
+
+    def test_parse_result_json_invalid_fence_returns_empty(self) -> None:
+        # NOTE: pins fallback — invalid JSON inside a ```json fence is
+        # swallowed (json.JSONDecodeError) and the helper returns {}.
+        result = stage_runtime.parse_result_json_from_text(
+            self.ctx, "```json\n{this is not json}\n```"
+        )
+
+        self.assertEqual(result, {})
+
+    def test_parse_result_json_non_object_fence_returns_empty(self) -> None:
+        # NOTE: pins current behavior — a fenced JSON array parses fine but is
+        # not a dict, so the helper returns {}.
+        result = stage_runtime.parse_result_json_from_text(self.ctx, "```json\n[1, 2, 3]\n```")
+
+        self.assertEqual(result, {})
+
+    def test_read_stage_result_json_reads_utf8_bom_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "stage.result.json"
+            payload = {"status": "PASS", "next_stage": "done", "human_gate_required": False}
+            path.write_text(json.dumps(payload), encoding="utf-8-sig")
+
+            result = stage_runtime.read_stage_result_json(
+                HarnessContext.from_namespace({"rel": lambda value: str(value)}),
+                path,
+            )
+
+            self.assertEqual(result, payload)
+
+    def test_parse_result_scalar_coercions(self) -> None:
+        cases = [
+            ("true", True),
+            ("True", True),
+            ("false", False),
+            ("FALSE", False),
+            ("없음", ""),
+            ("  PASS  ", "PASS"),
+            # NOTE: pins current behavior — numbers are NOT coerced;
+            # parse_result_scalar only maps true/false/없음 and returns every
+            # other value as the raw (stripped) string.
+            ("42", "42"),
+            ("3.14", "3.14"),
+        ]
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(stage_runtime.parse_result_scalar(self.ctx, raw), expected)
+
+    def test_find_stage_result_parses_stage_block_fields(self) -> None:
+        text = (
+            "# output\n"
+            "\n"
+            "## 단계 결과\n"
+            "- status: FAIL\n"
+            "- next_stage: 04_fix\n"
+            "- human_gate_required: true\n"
+            "- harness_commit_required: false\n"
+            "- blocking_reason: tests failing\n"
+            "\n"
+            "## 다음 섹션\n"
+            "- status: PASS\n"
+        )
+
+        result = stage_runtime.find_stage_result(self.ctx, text)
+
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["next_stage"], "04_fix")
+        self.assertIs(result["human_gate_required"], True)
+        self.assertIs(result["harness_commit_required"], False)
+        self.assertEqual(result["blocking_reason"], "tests failing")
+
+    def test_find_stage_result_without_section_returns_empty(self) -> None:
+        result = stage_runtime.find_stage_result(self.ctx, "# no result section\n- status: PASS\n")
+
+        self.assertEqual(result, {})
+
+    def test_find_stage_result_uses_last_stage_result_section(self) -> None:
+        # NOTE: pins current behavior — when the output contains multiple
+        # '## 단계 결과' headings, the scan keeps overwriting the start index,
+        # so the LAST section wins.
+        text = (
+            "## 단계 결과\n"
+            "- status: FAIL\n"
+            "- next_stage: 04_fix\n"
+            "\n"
+            "## 중간 섹션\n"
+            "- noise: x\n"
+            "\n"
+            "## 단계 결과\n"
+            "- status: PASS\n"
+            "- next_stage: done\n"
+        )
+
+        result = stage_runtime.find_stage_result(self.ctx, text)
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["next_stage"], "done")
+
+    def test_find_stage_result_prefers_json_in_section_over_bullets(self) -> None:
+        text = (
+            "## 단계 결과\n"
+            "```json\n"
+            '{"status": "PASS", "next_stage": "done", "human_gate_required": false}\n'
+            "```\n"
+            "- status: FAIL\n"
+        )
+
+        result = stage_runtime.find_stage_result(self.ctx, text)
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["next_stage"], "done")
+        self.assertIs(result["human_gate_required"], False)
+
+
 if __name__ == "__main__":
     unittest.main()

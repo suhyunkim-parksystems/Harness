@@ -213,5 +213,135 @@ class VerificationSelfTests(unittest.TestCase):
             self.assertEqual(saved["verification"]["commands"][0]["command"], command)
 
 
+class DynamicCommandSafetyMatrixSelfTests(unittest.TestCase):
+    def test_rejection_matrix_covers_each_safety_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ctx = _verification_context(root)
+            cases: list[tuple[str, dict[str, Any], str]] = [
+                (
+                    "powershell_wrapper",
+                    {"name": "ps", "command": ["powershell", "-Command", "echo hi"], "cwd": "."},
+                    "shell wrapper commands are not allowed",
+                ),
+                (
+                    "cmd_wrapper",
+                    {"name": "cmd", "command": ["cmd", "/c", "dir"], "cwd": "."},
+                    "shell wrapper commands are not allowed",
+                ),
+                (
+                    "bash_wrapper",
+                    {"name": "bash", "command": ["bash", "-lc", "ls"], "cwd": "."},
+                    "shell wrapper commands are not allowed",
+                ),
+                (
+                    "curl_executable",
+                    {"name": "curl", "command": ["curl", "https://example.invalid"], "cwd": "."},
+                    "destructive or network command is not allowed",
+                ),
+                (
+                    "del_executable",
+                    {"name": "del", "command": ["del", "build"], "cwd": "."},
+                    "destructive or network command is not allowed",
+                ),
+                (
+                    "bare_npm",
+                    {"name": "npm", "command": ["npm", "test"], "cwd": "."},
+                    "use npm.cmd",
+                ),
+                (
+                    "and_and_control_token",
+                    {"name": "andand", "command": ["python", "-m", "pytest", "&&", "echo"], "cwd": "."},
+                    "shell control operators are not allowed",
+                ),
+                (
+                    "pipe_control_token",
+                    {"name": "pipe", "command": ["python", "-m", "pytest", "|", "tee"], "cwd": "."},
+                    "shell control operators are not allowed",
+                ),
+                (
+                    "dangerous_git_subcommand",
+                    {"name": "git-co", "command": ["git", "checkout", "main"], "cwd": "."},
+                    "git checkout is not allowed",
+                ),
+                (
+                    "dangerous_token_in_args",
+                    {"name": "rm-arg", "command": ["python", "-m", "pytest", "rm"], "cwd": "."},
+                    "destructive or network command token is not allowed",
+                ),
+                (
+                    "python_script_not_allowlisted",
+                    {"name": "pyscript", "command": ["python", "script.py"], "cwd": "."},
+                    "not in the dynamic verification allowlist",
+                ),
+                (
+                    "direct_pytest_not_allowlisted",
+                    {"name": "pytest", "command": ["pytest", "tests"], "cwd": "."},
+                    "not in the dynamic verification allowlist",
+                ),
+                (
+                    "cwd_outside_repo",
+                    {"name": "outside", "command": ["python", "-m", "pytest"], "cwd": ".."},
+                    "cwd is outside the repository",
+                ),
+                (
+                    "cwd_missing_directory",
+                    {"name": "no-dir", "command": ["python", "-m", "pytest"], "cwd": "no_such_dir"},
+                    "cwd does not exist or is not a directory",
+                ),
+                (
+                    "path_arg_escapes_repo",
+                    {"name": "escape", "command": ["python", "-m", "pytest", "..\\..\\x"], "cwd": "."},
+                    "path argument points outside the repository",
+                ),
+                (
+                    "empty_command_array",
+                    {"name": "empty", "command": [], "cwd": "."},
+                    "command array is empty",
+                ),
+                (
+                    "missing_command",
+                    {"name": "missing", "cwd": "."},
+                    "command must be an array",
+                ),
+            ]
+
+            for case_name, entry, expected_reason in cases:
+                with self.subTest(case=case_name):
+                    plan = verification.dynamic_verification_commands(
+                        ctx,
+                        "demo",
+                        {"test_commands": [entry]},
+                        [],
+                    )
+                    self.assertEqual(plan["commands"], [])
+                    self.assertEqual(plan["skipped"], [])
+                    self.assertEqual(len(plan["rejected"]), 1)
+                    self.assertIn(expected_reason, str(plan["rejected"][0]["reason"]))
+
+    def test_allowlisted_command_forms_are_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ctx = _verification_context(root)
+            result = {
+                "test_commands": [
+                    {"name": "python-pytest", "command": ["python", "-m", "pytest", "tests"], "cwd": "."},
+                    {"name": "npm-test", "command": ["npm.cmd", "test"], "cwd": "."},
+                    {"name": "npm-build", "command": ["npm.cmd", "run", "build"], "cwd": "."},
+                    {"name": "dotnet-test", "command": ["dotnet", "test"], "cwd": "."},
+                    {"name": "dotnet-build", "command": ["dotnet", "build"], "cwd": "."},
+                ]
+            }
+
+            plan = verification.dynamic_verification_commands(ctx, "demo", result, [])
+
+            self.assertEqual(plan["rejected"], [])
+            self.assertEqual(plan["skipped"], [])
+            self.assertEqual(
+                [item["name"] for item in plan["commands"]],
+                ["python-pytest", "npm-test", "npm-build", "dotnet-test", "dotnet-build"],
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

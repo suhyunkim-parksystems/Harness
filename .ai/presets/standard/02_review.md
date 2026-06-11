@@ -21,14 +21,6 @@ commit_owner: "harness"
 default_next_stage: "03_fix"
 ---
 
-## Stage Transition Guard
-
-- This review stage is not terminal in the standard pipeline.
-- Even when there are zero findings, write `status: PASS` and `next_stage: 03_fix`.
-- Do not write `next_stage: done` in this stage.
-- Review-time checks do not replace `04_verify`.
-- If there are no findings, `03_fix` should record a no-op fix result and then continue to `04_verify`.
-
 # Standard Review 프리셋 (2단계)
 
 ## 경로 원칙
@@ -46,6 +38,8 @@ default_next_stage: "03_fix"
 - 담당 모델이 권장 모델과 다르면 `02_review.md`의 `## 단계 결과`에 `model_mismatch: true`와 실제 실행 모델을 기록한다.
 - 이 단계는 구현 코드와 구현 기록을 독립적으로 검토하고 지적 사항을 남기는 단계이다.
 - 코드를 직접 수정하지 않는다.
+- 이 리뷰 단계는 파이프라인의 종착 단계가 아니다. 지적 사항이 0건이어도 `status: PASS`, `next_stage: 03_fix`로 기록하며, `next_stage: done`을 쓰지 않는다.
+- 리뷰 시점의 확인은 `04_verify`를 대체하지 않는다. 지적이 없으면 `03_fix`가 no-op 수정 기록을 남기고 `04_verify`로 진행한다.
 
 ---
 
@@ -201,6 +195,6 @@ default_next_stage: "03_fix"
 ## 금지 사항
 
 - 코드를 직접 수정하지 않는다.
-- 파일을 생성하거나 삭제하지 않는다. 단, `02_review.md` 작성은 허용한다.
+- 파일을 생성하거나 삭제하지 않는다. 단, `02_review.md`와 `02_review.result.json` 작성은 허용한다.
 - 리뷰 근거 없이 좋다/나쁘다로만 판단하지 않는다.
 - 문제가 없더라도 왜 문제가 없다고 판단했는지 기록한다.

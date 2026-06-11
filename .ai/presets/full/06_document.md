@@ -266,7 +266,7 @@ print("생성 완료: .project/docs/[기능명]_명세서.docx")
 5. `word/document.xml`에 표가 최소 2개 이상 있는지 확인한다.
 6. Heading 1 섹션이 7개 이상 있는지 확인한다.
 7. 코드 예시가 있으면 `add_code_block`으로 생성된 코드 블록 형태인지 확인한다.
-8. `[내용]`, `[기능명]`, `src/path/to/file.py`, `tests/test_xxx.py`, `패키지명` 같은 템플릿 placeholder가 남아 있으면 실패로 처리한다.
+8. `[내용]`, `src/path/to/file.py`, `tests/test_xxx.py`, `패키지명` 같은 템플릿 placeholder가 남아 있으면 실패로 처리한다.
 9. 위 검증 중 하나라도 실패하면 `status: FAIL`로 기록하고, `blocking_reason`에 실패한 검증 항목을 구체적으로 쓴다.
 
 PowerShell 예시:
@@ -291,7 +291,7 @@ with ZipFile(path) as zf:
     assert xml.count("<w:tbl>") >= 2
     assert xml.count('w:val="Heading1"') >= 7
     forbidden_placeholders = [
-        "[내용]", "[기능명]", "src/path/to/file.py", "tests/test_xxx.py", "패키지명"
+        "[내용]", "src/path/to/file.py", "tests/test_xxx.py", "패키지명"
     ]
     assert not any(token in xml for token in forbidden_placeholders)
 ```

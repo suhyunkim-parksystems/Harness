@@ -34,6 +34,16 @@ class PipelineConfig:
     verify_retry_target_stage: Optional[str]
     fix_stage: Optional[str]
     document_stage: Optional[str]
+    # Standalone plan stage (only the full pipeline has one). None when the
+    # pipeline folds planning into specify/develop.
+    plan_stage: Optional[str]
+    # Whether the plan stage must produce a valid feature-level schemas.json
+    # (interface schemas artifact). Only meaningful when plan_stage is set.
+    plan_schemas_required: bool
+    # Whether the verify stage must statically check that the implementation
+    # conforms to schemas.json (Phase 2). Turning this off rolls the pipeline
+    # back to Phase 1 behavior (schema generated/validated but not enforced).
+    schemas_conformance_required: bool
     # Path string suggested in user-facing commands for this mode. Kept as a
     # literal (with Windows separators) to match the historical output exactly.
     harness_script: str
@@ -41,6 +51,9 @@ class PipelineConfig:
     extracts_pc_candidates: bool
     # Whether the pipeline exposes the multi-provider deep-thinking plan path.
     supports_deep_thinking: bool
+    # Whether the pipeline supports the --cross-validation blind acceptance
+    # track (Phase 3). Requires a standalone plan stage with schemas.
+    supports_cross_validation: bool
 
 
 PIPELINES: dict[str, PipelineConfig] = {
@@ -59,9 +72,13 @@ PIPELINES: dict[str, PipelineConfig] = {
         verify_retry_target_stage="01_develop",
         fix_stage=None,
         document_stage=None,
+        plan_stage=None,
+        plan_schemas_required=False,
+        schemas_conformance_required=False,
         harness_script=".ai/harness_fast.py",
         extracts_pc_candidates=False,
         supports_deep_thinking=False,
+        supports_cross_validation=False,
     ),
     "standard": PipelineConfig(
         mode="standard",
@@ -80,9 +97,13 @@ PIPELINES: dict[str, PipelineConfig] = {
         verify_retry_target_stage="03_fix",
         fix_stage="03_fix",
         document_stage=None,
+        plan_stage=None,
+        plan_schemas_required=False,
+        schemas_conformance_required=False,
         harness_script=".ai/harness_standard.py",
         extracts_pc_candidates=True,
         supports_deep_thinking=False,
+        supports_cross_validation=False,
     ),
     "full": PipelineConfig(
         mode="full",
@@ -111,9 +132,13 @@ PIPELINES: dict[str, PipelineConfig] = {
         verify_retry_target_stage="04_fix",
         fix_stage="04_fix",
         document_stage="06_document",
+        plan_stage="01_plan",
+        plan_schemas_required=True,
+        schemas_conformance_required=True,
         harness_script=".ai/harness.py",
         extracts_pc_candidates=True,
         supports_deep_thinking=True,
+        supports_cross_validation=True,
     ),
 }
 
@@ -144,3 +169,8 @@ def harness_script(mode: object) -> str:
 def supports_deep_thinking(mode: object) -> bool:
     config = get(mode)
     return bool(config.supports_deep_thinking) if config else False
+
+
+def supports_cross_validation(mode: object) -> bool:
+    config = get(mode)
+    return bool(config.supports_cross_validation) if config else False

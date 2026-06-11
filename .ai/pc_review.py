@@ -134,6 +134,8 @@ If several candidates mean the same thing, merge them into one short rule.
 - If a candidate becomes part of a proposed project-wide rule, mark it covered by that rule.
 - Every pending candidate id must appear exactly once, either in `proposed_rules[].covered_candidate_ids` or `rejected_candidates[].candidate_id`.
 - Do not propose a rule that duplicates the existing Project Contract.
+- `project_contract_markdown` is append-only: keep every existing line of the current contract unchanged and only add new lines. Never drop, merge, or rewrite existing rules.
+- Each `rule_text` must appear verbatim as its own line (typically a `- ` bullet) in `project_contract_markdown`, and `rule_text` values must not duplicate each other.
 - Keep each `rule_text` short. Prefer one sentence under 160 Korean characters.
 - The final `project_contract_markdown` must be concise and rule-focused.
 
@@ -236,6 +238,7 @@ def validate_batch_proposal(proposal: dict, pending: list[dict], current_contrac
 
     approved_ids: list[str] = []
     rejected_ids: list[str] = []
+    seen_rule_texts: set[str] = set()
     for index, rule in enumerate(proposed_rules, start=1):
         if not isinstance(rule, dict):
             raise base.HarnessError(f"proposed_rules[{index}] must be an object.")
@@ -246,6 +249,11 @@ def validate_batch_proposal(proposal: dict, pending: list[dict], current_contrac
             raise base.HarnessError(
                 f"proposed_rules[{index}] is too long. Keep Project Contract rules concise."
             )
+        if rule_text in seen_rule_texts:
+            raise base.HarnessError(
+                f"proposed_rules[{index}] duplicates an earlier rule_text: {rule_text}"
+            )
+        seen_rule_texts.add(rule_text)
         covered = _string_list(rule.get("covered_candidate_ids"))
         if not covered:
             raise base.HarnessError(f"proposed_rules[{index}] must cover at least one candidate id.")
@@ -282,11 +290,34 @@ def validate_batch_proposal(proposal: dict, pending: list[dict], current_contrac
     if not proposed_contract.startswith("# Project Contract"):
         raise base.HarnessError("project_contract_markdown must start with '# Project Contract'.")
 
+    proposed_lines = {line.strip() for line in proposed_contract.splitlines()}
+    # The contract is append-only: a reviewer proposal may add rules but must
+    # never drop or rewrite lines that are already part of the approved
+    # contract (project_planning enforces the same invariant on its path).
+    missing_existing = [
+        line.strip()
+        for line in current_contract.splitlines()
+        if line.strip() and line.strip() not in proposed_lines
+    ]
+    if missing_existing:
+        preview = " | ".join(missing_existing[:3])
+        raise base.HarnessError(
+            "project_contract_markdown drops existing contract lines "
+            f"(the contract is append-only): {preview}"
+        )
+
+    # Each approved rule must exist as its own (optionally bulleted) line, not
+    # merely as a substring of some unrelated longer line.
+    rule_lines = set(proposed_lines)
+    for line in proposed_lines:
+        if line.startswith(("- ", "* ")):
+            rule_lines.add(line[2:].strip())
     for index, rule in enumerate(proposed_rules, start=1):
         rule_text = str(rule.get("rule_text") or "").strip()
-        if rule_text not in proposed_contract:
+        if rule_text not in rule_lines:
             raise base.HarnessError(
-                f"project_contract_markdown does not contain proposed_rules[{index}].rule_text."
+                f"project_contract_markdown does not contain proposed_rules[{index}].rule_text "
+                "as its own line."
             )
 
 

@@ -82,6 +82,7 @@
                     ".ai/harness_core/__init__.py",
                     ".ai/harness_core/console.py",
                     ".ai/harness_core/context.py",
+                    ".ai/harness_core/cross_validation.py",
                     ".ai/harness_core/errors.py",
                     ".ai/harness_core/process.py",
                     ".ai/harness_core/status.py",

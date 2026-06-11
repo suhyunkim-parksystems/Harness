@@ -7,9 +7,48 @@ the active ROOT and re-expose them (also into the HarnessContext).
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
+from typing import Any
 
 from .text import norm_repo_path
+
+
+def kill_process_tree(proc: "subprocess.Popen[Any]", *, wait_timeout: float = 10.0) -> None:
+    """Terminate a child process *and all its descendants*.
+
+    On Windows, ``proc.kill()`` (TerminateProcess) only kills the direct child.
+    The default providers are ``.cmd`` shims, so the direct child is ``cmd.exe``
+    and the real agent (``node.exe``) is a grandchild that survives -- it keeps
+    editing the repo and holding the inherited stdout/stderr pipe handles (which
+    makes a follow-up ``communicate()`` block forever). ``taskkill /T`` walks the
+    whole tree. On POSIX, fall back to ``proc.kill()``.
+    """
+    if proc.poll() is not None:
+        return
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError:
+            _best_effort_kill(proc)
+    else:
+        _best_effort_kill(proc)
+    try:
+        proc.wait(timeout=wait_timeout)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+
+def _best_effort_kill(proc: "subprocess.Popen[Any]") -> None:
+    try:
+        proc.kill()
+    except OSError:
+        pass
 
 
 def git(root: Path, args: list[str], check: bool = True) -> "subprocess.CompletedProcess[str]":
@@ -28,6 +67,28 @@ def git(root: Path, args: list[str], check: bool = True) -> "subprocess.Complete
 
 def git_output(root: Path, args: list[str]) -> str:
     return git(root, args).stdout.strip()
+
+
+def git_show_file(root: Path, ref: str, rel_path: str) -> bytes | None:
+    """Return the blob bytes of ``rel_path`` (posix-style) at ``ref``, or None.
+
+    Bytes (not text) so callers can hash the content exactly as stored."""
+    if not ref or not rel_path:
+        return None
+    cmd = [
+        "git",
+        "-c",
+        f"safe.directory={root.as_posix()}",
+        "show",
+        f"{ref}:{rel_path}",
+    ]
+    try:
+        proc = subprocess.run(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
 
 
 def git_changed_paths(root: Path) -> list[str]:

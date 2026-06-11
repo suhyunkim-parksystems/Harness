@@ -19,6 +19,7 @@ from harness_core.context import HarnessContext  # noqa: E402
 
 PROMPT_OUTPUT_RE = re.compile(r"^- output_file:\s*(.+?)\s*$", re.M)
 PROMPT_RESULT_RE = re.compile(r"^- result_json_file:\s*(.+?)\s*$", re.M)
+PROMPT_SCHEMAS_RE = re.compile(r"^- schemas_file:\s*(.+?)\s*$", re.M)
 
 PLAN_STAGE = "01_plan"
 FEATURE = "demo-feat"
@@ -30,7 +31,11 @@ def _candidate_body() -> str:
     return "# 01_plan\n\n초안 본문입니다.\n\n## 단계 결과\nstatus: PASS\n"
 
 
-def _fake_run_factory(records: list[dict[str, Any]], fail_providers: tuple[str, ...] = ()) -> Any:
+def _fake_run_factory(
+    records: list[dict[str, Any]],
+    fail_providers: tuple[str, ...] = (),
+    schemas_mode: str | None = None,
+) -> Any:
     def fake_run(
         provider: str,
         prompt_text: str,
@@ -69,6 +74,20 @@ def _fake_run_factory(records: list[dict[str, Any]], fail_providers: tuple[str, 
         rj_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(_candidate_body(), encoding="utf-8")
         rj_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        if schemas_mode is not None:
+            schemas_match = PROMPT_SCHEMAS_RE.search(prompt_text)
+            if schemas_mode == "follow_prompt" and schemas_match:
+                # Well-behaved provider: writes the schemas artifact exactly
+                # where the (possibly redirected) prompt points.
+                schemas_path = Path(harness.ROOT) / schemas_match.group(1)
+            else:
+                # Rogue provider: ignores the redirect and writes the official
+                # feature-level schemas artifact directly.
+                schemas_path = harness.stage_output_path(FEATURE, PLAN_STAGE).parent / "schemas.json"
+            schemas_path.parent.mkdir(parents=True, exist_ok=True)
+            schemas_path.write_text(
+                json.dumps({"written_by": provider}, ensure_ascii=False), encoding="utf-8"
+            )
         return {**base, "returncode": 0}
 
     return fake_run
@@ -131,8 +150,12 @@ class ParallelPlanTests(unittest.TestCase):
     def _write_prompt(self) -> None:
         official_md = harness.rel(harness.stage_output_path(FEATURE, PLAN_STAGE))
         official_rj = harness.rel(harness.stage_result_json_path(FEATURE, PLAN_STAGE))
+        official_schemas = harness.rel(
+            harness.stage_output_path(FEATURE, PLAN_STAGE).parent / "schemas.json"
+        )
         self.official_md = official_md
         self.official_rj = official_rj
+        self.official_schemas = official_schemas
         prompt_dir = harness.RUNS_DIR / FEATURE / "prompts"
         prompt_dir.mkdir(parents=True, exist_ok=True)
         prompt_file = prompt_dir / f"{PLAN_STAGE}_attempt1.md"
@@ -142,10 +165,12 @@ class ParallelPlanTests(unittest.TestCase):
             f"- feature_name: {FEATURE}\n"
             f"- stage: {PLAN_STAGE}\n"
             f"- output_file: {official_md}\n"
-            f"- result_json_file: {official_rj}\n\n"
+            f"- result_json_file: {official_rj}\n"
+            f"- schemas_file: {official_schemas}\n\n"
             "## Manual Provider Instructions\n"
             f"3. Write the stage output exactly at `{official_md}`.\n"
-            f"4. Write the result JSON exactly at `{official_rj}`.\n",
+            f"4. Write the result JSON exactly at `{official_rj}`.\n"
+            f"5. Write the interface schemas exactly at `{official_schemas}`.\n",
             encoding="utf-8",
         )
         self.prompt_rel = harness.rel(prompt_file)
@@ -274,6 +299,41 @@ class ParallelPlanTests(unittest.TestCase):
         self.assertEqual(len(self._synthesis_prompts(records)), 0)
         plan_text = (harness.FEATURES_DIR / FEATURE / "01_plan.md").read_text(encoding="utf-8")
         self.assertIn("초안 본문입니다.", plan_text)
+
+    def test_draft_prompts_redirect_schemas_path_and_promotion_recovers_it(self) -> None:
+        # Drafts must never be pointed at the official schemas.json (frozen plan
+        # artifact); and when a lone surviving draft is promoted without a
+        # synthesis pass, its temp schemas artifact must be promoted with it.
+        records: list[dict[str, Any]] = []
+        ctx = self._ctx(
+            _fake_run_factory(records, fail_providers=("claude", "agy"), schemas_mode="follow_prompt")
+        )
+        state = dt.execute_plan(ctx, self._state(), 30)
+
+        self.assertEqual(state["status"], "model_completed")
+        for prompt in self._draft_prompts(records):
+            self.assertNotIn(self.official_schemas, prompt)
+            self.assertIn(".schemas.json", prompt)
+
+        official = harness.FEATURES_DIR / FEATURE / "schemas.json"
+        self.assertTrue(official.exists(), "promoted draft must carry its schemas artifact")
+        self.assertIn("codex", official.read_text(encoding="utf-8"))
+
+    def test_rogue_draft_write_to_official_schemas_is_rolled_back(self) -> None:
+        # A provider that ignores the redirect and writes the official
+        # schemas.json directly must not leak into the promoted result.
+        records: list[dict[str, Any]] = []
+        ctx = self._ctx(
+            _fake_run_factory(records, fail_providers=("claude", "agy"), schemas_mode="pollute_official")
+        )
+        state = dt.execute_plan(ctx, self._state(), 30)
+
+        self.assertEqual(state["status"], "model_completed")
+        official = harness.FEATURES_DIR / FEATURE / "schemas.json"
+        self.assertFalse(
+            official.exists(),
+            "draft writes to the official schemas.json must be rolled back by the backup/restore guard",
+        )
 
     def test_legacy_config_key_is_still_supported(self) -> None:
         self._write_legacy_config({"max_drafters": 2})

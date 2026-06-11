@@ -110,7 +110,8 @@ default_next_stage: "01_plan"
 - `medium`: 일반 기능 추가, 여러 파일 변경, 테스트 추가 필요
 - `high`: 인증/인가, 결제, 보안, 데이터 마이그레이션, 데이터 삭제/변환, 공개 API 변경, 새 외부 의존성, 대규모 리팩토링
 
-다음 중 하나라도 해당하면 `human_gate_required: true`로 둔다.
+full 파이프라인의 이 단계는 항상 사람 승인 게이트를 거친다(`human_gate_required: true` 고정).
+아래 항목은 `risk_level` 판단과 이후 plan 단계의 게이트 판단 근거로 기록한다.
 
 - `risk_level: high`
 - 새 외부 의존성 가능성

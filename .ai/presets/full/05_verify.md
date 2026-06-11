@@ -6,6 +6,7 @@ model_policy: "preferred_not_hard_block"
 required_inputs:
   - ".project/features/[기능명]/00_spec.md"
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
   - ".project/features/[기능명]/02_dev.md"
   - ".project/features/[기능명]/03_review.md"
   - ".project/features/[기능명]/04_fix.md"
@@ -19,6 +20,7 @@ forbidden_writes:
   - "existing_tests"
   - ".project/features/[기능명]/00_spec.md"
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
   - ".project/features/[기능명]/02_dev.md"
   - ".project/features/[기능명]/03_review.md"
   - ".project/features/[기능명]/04_fix.md"
@@ -41,6 +43,7 @@ default_next_stage_on_fail: "04_fix"
 - 새 테스트 파일은 `tests/` 하위에만 만든다. `src/` 하위에 테스트 파일을 만들지 않는다.
 - `requirements.txt`, `run.ps1`, 설정 파일, 의존성 파일, 실행 스크립트 같은 보조 파일도 루트에 만들지 않는다. 필요하면 반드시 `src/` 또는 `tests/` 하위에 둔다.
 - `vendor/`, `packages/`, `dist/`, `build/` 등 외부/생성 산출물 디렉터리는 계획/수정/검증 대상에서 제외하고, 필요하면 생성물 또는 외부 산출물로만 기록한다.
+- `tests/acceptance/`는 블라인드 수용테스트 트랙의 예약 경로다. 이 단계에서 그 하위에 파일을 만들거나 수정하지 않는다. 새 테스트는 `tests/` 하위의 다른 경로(예: `tests/unit/`)에 둔다.
 
 ## 실행 정책
 
@@ -69,6 +72,7 @@ default_next_stage_on_fail: "04_fix"
 1. 요청사항이 검증 불가능할 정도로 모호한 경우에만 `status: NEEDS_USER`로 멈춘다.
 2. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 위험도를 파악한다.
 3. `.project/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 위험 구간, 의존성, 테스트 전략을 파악한다.
+3-1. `.project/features/[기능명]/schemas.json`의 인터페이스 스키마를 파악한다(읽기 전용, 수정 금지).
 4. `.project/features/[기능명]/02_dev.md`를 읽고 기능 목표, 구현 의도, Git 정보를 파악한다.
 5. `.project/features/[기능명]/03_review.md`를 읽고 리뷰 지적 사항을 파악한다.
 6. `.project/features/[기능명]/04_fix.md`를 읽고 수용/거부/보류 판단과 실제 수정 내용을 파악한다.
@@ -97,6 +101,15 @@ default_next_stage_on_fail: "04_fix"
 - 01_plan.md의 위험 구간 완화 방안이 실제 코드에 반영되었는지 확인한다.
 - 01_plan.md의 호환성 유지 전략이 실제 코드와 테스트에 반영되었는지 확인한다.
 - 01_plan.md의 새 의존성과 실제 추가 의존성이 일치하는지 확인한다.
+
+### 스키마 적합성 (schemas.json -> 구현)
+
+- schemas.json의 모든 `change: new`/`modify` 심볼이 코드에 실제로 존재하는지 확인한다.
+- 구현 시그니처(파라미터 이름/순서, 반환 구조)가 스키마 선언과 일치하는지 확인한다.
+- 선언된 에러 규약(`errors[].raises`)이 해당 조건에서 실제로 발생하는지, 가능하면 동적으로(테스트 실행) 확인한다.
+- 파라미터/반환의 `constraints`(범위, 포맷, enum)가 구현에서 강제되는지 확인한다. 가능하면 경계값을 동적으로 확인한다.
+- 선언된 `invariants`가 유지되는지 확인한다.
+- 참고: 모델 판정과 별개로, 하네스가 PASS 직후 심볼 존재/파라미터 이름·순서를 기계 검증한다. 불일치 시 하네스가 verify를 FAIL로 덮어쓰고 `next_stage: 04_fix`로 보낸다.
 
 ### 일관성 확인 (dev -> review -> fix)
 
@@ -285,6 +298,7 @@ Rules:
 
 - 프로덕션 코드를 직접 수정하지 않는다.
 - 기존 테스트 코드를 수정하거나 삭제하지 않는다.
+- `tests/acceptance/` 하위에 파일을 만들거나 수정하지 않는다.
 - 검증이 FAIL인데 PASS로 판정하지 않는다.
 - 하네스 검증 실패를 무시하거나 숨기지 않는다.
 - 1~4단계 md 파일을 수정하지 않는다.

@@ -6,6 +6,7 @@ model_policy: "preferred_not_hard_block"
 required_inputs:
   - ".project/features/[기능명]/00_spec.md"
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
   - ".project/features/[기능명]/02_dev.md"
 outputs:
   - ".project/features/[기능명]/03_review.md"
@@ -16,20 +17,13 @@ forbidden_writes:
   - "tests"
   - ".project/features/[기능명]/00_spec.md"
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
   - ".project/features/[기능명]/02_dev.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 commit_owner: "harness"
 default_next_stage: "04_fix"
 ---
-
-## Stage Transition Guard
-
-- This review stage is not terminal in the full pipeline.
-- Even when there are zero findings, write `status: PASS` and `next_stage: 04_fix`.
-- Do not write `next_stage: done` in this stage.
-- Review-time checks do not replace `05_verify`.
-- If there are no findings, `04_fix` should record a no-op fix result and then continue to `05_verify`.
 
 # 리뷰 프리셋 (3단계)
 
@@ -48,6 +42,8 @@ default_next_stage: "04_fix"
 - 담당 모델이 권장 모델과 다르면 `03_review.md`의 `## 단계 결과`에 `model_mismatch: true`와 실제 실행 모델을 기록한다.
 - 이 단계는 코드와 구현 기록을 검토하고 지적 사항을 남기는 단계이다.
 - 코드를 직접 수정하지 않는다.
+- 이 리뷰 단계는 파이프라인의 종착 단계가 아니다. 지적 사항이 0건이어도 `status: PASS`, `next_stage: 04_fix`로 기록하며, `next_stage: done`을 쓰지 않는다.
+- 리뷰 시점의 확인은 `05_verify`를 대체하지 않는다. 지적이 없으면 `04_fix`가 no-op 수정 기록을 남기고 `05_verify`로 진행한다.
 
 ---
 
@@ -63,10 +59,10 @@ default_next_stage: "04_fix"
 1. 요청사항이 리뷰 불가능할 정도로 모호한 경우에만 `status: NEEDS_USER`로 멈춘다.
 2. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 위험도를 파악한다.
 3. `.project/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 위험 구간, 의존성, 테스트 전략을 파악한다.
+3-1. `.project/features/[기능명]/schemas.json`의 인터페이스 스키마(심볼/시그니처/입출력·에러 규약/불변식/모호점 결정)를 파악한다.
 4. `.project/features/[기능명]/02_dev.md`를 읽고 기능 목표, 구현 의도, Git 정보를 파악한다.
 5. 실제 변경 diff를 확인한다.
-   - `02_dev.md`의 `diff_command`가 있으면 우선 사용한다.
-   - `02_dev.md`의 `review_diff_command`가 있으면 우선 사용한다.
+   - `02_dev.md`의 `pre_commit_diff_command` 또는 diff command가 있으면 우선 사용한다.
    - 리뷰 시작 시점의 현재 `HEAD`를 `review_target_commit`으로 기록한다.
    - `02_dev.md`의 `base_commit`이 있으면 `git diff [base_commit]..[review_target_commit]`로 확인한다.
    - 커밋이 없고 워킹트리에 변경이 있으면 `git diff`로 확인한다.
@@ -125,6 +121,25 @@ default_next_stage: "04_fix"
 - 같은 로직이 2곳 이상 반복되면 지적한다.
 - 기존 코드베이스 패턴과 다른 방식이면 지적한다.
 - 매직 넘버/매직 스트링이 상수 없이 사용되고 의미 파악을 방해하면 지적한다.
+
+### 스키마 적합성 (schemas.json ↔ 구현)
+
+- schemas.json은 plan이 동결한 인터페이스 법이고, 이 단계는 읽기 전용으로 바인딩한다.
+- 스키마에 선언된 `change: new`/`modify` 심볼이 코드에 존재하지 않으면 BLOCKER로 지적한다.
+- 구현 시그니처(파라미터 이름/순서, 반환 구조)가 스키마 선언과 다르면 BLOCKER로 지적한다. (하네스도 verify에서 이름/순서/개수를 기계 검증하지만, 타입·반환 구조·constraints의 의미 일치는 이 리뷰가 본다.)
+- 선언된 에러 규약(`errors[].raises`, retry 정책)이 구현에 반영되지 않았으면 지적한다.
+- 선언된 불변식(`invariants`)을 깨는 구현이면 지적한다.
+- 파라미터/반환의 `constraints`(범위, 포맷, enum)가 구현에서 강제되지 않으면 지적한다.
+- 구현이 schemas.json을 수정했으면 BLOCKER로 지적한다(INV-3 위반 — 하네스 드리프트 가드도 차단하지만 리뷰에서도 확인).
+
+### 스키마 ↔ spec 정합성
+
+- 구조 검증(Phase 1)은 형식만 보고 의미는 못 본다. 그 공백을 이 검토가 메운다.
+- 스키마가 00_spec.md의 요구를 빠뜨렸으면(요구된 공개 기능인데 심볼 미등재) 지적한다.
+- 스키마가 spec 요구를 왜곡했으면(타입/범위/에러 규약이 spec과 다른 의미) 지적한다.
+- `ambiguity_resolutions`의 결정이 spec과 모순되면 지적한다.
+- spec에 없는 심볼이 스키마에 추가되어 있으면(스코프 초과) 지적한다.
+- 스키마 자체의 결함은 이 단계에서 고치지 말고, BLOCKER로 지적해 plan 복귀를 권고한다.
 
 ### 계획 대비 구현 일치성
 
@@ -196,6 +211,18 @@ default_next_stage: "04_fix"
 - 왜 문제인지:
 - 어떻게 개선해야 하는지:
 
+## 스키마 적합성
+- severity:
+- 스키마 대비 구현 일치/불일치 항목 (심볼 존재, 시그니처, 에러 규약, 불변식, constraints):
+- 구체적 차이:
+- schemas.json 수정 여부: 없음 / 있음(BLOCKER)
+
+## 스키마 ↔ spec 정합성
+- severity:
+- 스키마가 spec 요구를 빠뜨리거나 왜곡한 항목:
+- ambiguity_resolutions와 spec의 모순 여부:
+- 문제가 없으면 왜 없다고 판단했는지:
+
 ## 계획 대비 구현 일치성
 - severity:
 - 01_plan.md 대비 일치/불일치 항목:
@@ -250,6 +277,6 @@ default_next_stage: "04_fix"
 ## 금지 사항
 
 - 코드를 직접 수정하지 않는다.
-- 파일을 생성하거나 삭제하지 않는다. 단, `03_review.md` 작성은 허용한다.
+- 파일을 생성하거나 삭제하지 않는다. 단, `03_review.md`와 `03_review.result.json` 작성은 허용한다.
 - 리뷰 근거 없이 좋다/나쁘다로만 판단하지 않는다.
 - 문제가 없더라도 왜 문제가 없다고 판단했는지 기록한다.

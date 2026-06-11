@@ -79,7 +79,7 @@ UNKNOWN_MAX_ATTEMPTS = 2
 # failure: it WILL reset on its own. So we poll on a short cooldown and bound the
 # wait by wall-clock from first occurrence, never by an attempt count.
 DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 300        # poll every 5 min while limited
-DEFAULT_RATE_LIMIT_MAX_WAIT_SECONDS = 6 * 3600   # after 6h still limited -> manual
+DEFAULT_RATE_LIMIT_MAX_WAIT_SECONDS = 24 * 3600  # after 24h still limited -> manual
 
 # Hard fallbacks so a minimal batch (only feature+request per run) still runs.
 HARD_DEFAULTS: dict[str, Any] = {
@@ -88,6 +88,7 @@ HARD_DEFAULTS: dict[str, Any] = {
     "decision_mode": "defaults",
     "yes": True,
     "deep_thinking": False,
+    "cross_validation": False,
     "strategy": "parallel",
     "timeout": 3600,
     "max_steps": 30,
@@ -161,8 +162,8 @@ AUTH_MARKERS = (
     "insufficient credit",
     "add credits",
 )
-# Provider quota/limit signals, matched case-insensitively (these phrases usually
-# land in the provider's stdout, not in blocked.reason - see classify_outcome).
+# Provider quota/limit signals, matched case-insensitively (these phrases land in
+# the provider's stdout OR stderr, not in blocked.reason - see classify_outcome).
 # These are TIME-WINDOWED and self-heal; extend to teach a new limit phrasing.
 RATE_LIMIT_MARKERS = (
     "spend limit",
@@ -374,6 +375,8 @@ def build_start_command(eff: dict[str, Any]) -> list[str]:
         cmd.append("--deep-thinking")
         if eff.get("strategy"):
             cmd += ["--strategy", str(eff["strategy"])]
+    if eff["pipeline"] == "full" and eff.get("cross_validation"):
+        cmd.append("--cross-validation")
     return cmd
 
 
@@ -496,12 +499,15 @@ def classify_outcome(run_json: Optional[dict[str, Any]], stderr: str) -> tuple[s
             if isinstance(blocked, dict):
                 reason = str(blocked.get("reason") or "")
                 stdout_tail = _read_tail(blocked.get("stdout"))
+                stderr_tail = _read_tail(blocked.get("stderr"))
             else:
                 reason = ""
                 stdout_tail = ""
-            # Classify on reason + stderr + the provider stdout tail so a limit
-            # message that only landed in stdout still surfaces as rate_limit.
-            blob = "\n".join(part for part in (reason, stderr, stdout_tail) if part)
+                stderr_tail = ""
+            # Classify on reason + stderr + the provider's stdout AND stderr tails:
+            # some providers (codex) write the quota/limit line to stderr while
+            # others (claude) use stdout, so a limit in either stream is caught.
+            blob = "\n".join(part for part in (reason, stderr, stdout_tail, stderr_tail) if part)
             return classify_reason(blob), reason or stderr.strip()
     # No terminal run.json (e.g. new-run guard rejected before creation, or crash):
     # fall back to the captured stderr.
@@ -681,6 +687,27 @@ def _commit_pc_review_changes(feature: str) -> None:
         log(f"{feature}: 계약 커밋 실패(무시) - {truncate(commit.stderr or commit.stdout, 160)}", "yellow")
 
 
+def _commit_run_metadata(feature: str) -> None:
+    """Commit this run's runtime metadata (run.json, prompts, structured logs,
+    verification, project history) on the run branch BEFORE the merge, so it
+    rides into base and the working tree stays clean afterward. The repo policy
+    tracks .project/** (see .gitignore); raw provider stdout/stderr stream logs
+    are gitignored, so ``git add`` skips them on its own. Best-effort: a no-op
+    when nothing tracked changed, and a failed commit never blocks delivery."""
+    paths = [p for p in (f".project/runs/{feature}", ".project/history") if (ROOT / p).exists()]
+    if not paths:
+        return
+    _git(["add", "--"] + paths)
+    staged = _git(["diff", "--cached", "--name-only", "--"] + paths).stdout.strip()
+    if not staged:
+        return
+    commit = _git(["commit", "-m", f"[orchestrate][run-meta] {feature} 런 메타데이터", "--"] + paths)
+    if commit.returncode == 0:
+        log(f"{feature}: 런 메타데이터 커밋 완료", "green")
+    else:
+        log(f"{feature}: 런 메타데이터 커밋 실패(무시) - {truncate(commit.stderr or commit.stdout, 160)}", "yellow")
+
+
 def mark_success(
     run: dict[str, Any],
     run_json: Optional[dict[str, Any]],
@@ -700,6 +727,7 @@ def mark_success(
     # contract commit is part of the very merge that integrates this feature.
     if batch is not None:
         _run_pc_review(batch, feature)
+    _commit_run_metadata(feature)
     merged, message = merge_run_branch(run_json)
     state["merged"] = merged
     if merged:

@@ -5,11 +5,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .context import HarnessRuntime
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
 from typing import Any
 
+from harness_core import cross_validation as xv_core
 from harness_core import pipeline
 from harness_core.errors import HarnessError
 from harness_core.status import ResultStatus, RunStatus
@@ -71,6 +73,13 @@ def _record_merge_preview(ctx: HarnessRuntime, state: dict[str, Any], stage: str
 
 
 def complete_run(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> dict[str, Any]:
+    if xv_core.enabled(state):
+        # The blind clone is run-scoped scratch: it must never outlive the run
+        # (사전 결정 1 -- the user-facing tree looks exactly like a plain full run).
+        try:
+            xv_core.remove_blind_clone(ctx, str(state["feature_name"]))
+        except OSError:
+            pass
     state["status"] = RunStatus.COMPLETE
     state["current_stage"] = "done"
     state.pop("blocked", None)
@@ -406,7 +415,77 @@ def _run_start_dirty_paths(ctx: HarnessRuntime) -> list[str]:
             paths.append(normalized)
         elif normalized == "tests" or normalized.startswith("tests/"):
             paths.append(normalized)
+        elif normalized == ".project/features" or normalized.startswith(".project/features/"):
+            # Leftover feature artifacts (e.g. schemas.json) would land in
+            # baseline_dirty and be excluded from every stage commit -- the plan
+            # commit would silently miss the schema, breaking the drift guard
+            # baseline and any worktree that forks from the plan commit.
+            paths.append(normalized)
     return sorted(set(paths))
+
+
+def _plan_schemas_stale_error(ctx: HarnessRuntime, state: dict[str, Any]) -> str | None:
+    """The schemas artifact must have been (re)written during this run.
+
+    A structurally valid schemas.json carried over from an older merged run of
+    the same feature would otherwise pass validation while describing a stale
+    plan. Byte-identical content already committed on this branch shows up as
+    unchanged -- in that case the agent must actually rewrite the file."""
+    schemas_path = ctx.feature_schemas_path(state["feature_name"])
+    schemas_rel = ctx.rel(schemas_path)
+    changed = ctx.git_changed_paths()
+    if schemas_rel in changed:
+        return None
+    if any(schemas_rel.startswith(path + "/") for path in changed):
+        return None  # collapsed untracked-directory entry covers the file
+    return (
+        f"Stale schemas artifact: {schemas_rel} was not written during this plan stage "
+        "(its content matches what is already committed). The plan must author the "
+        "interface schema for THIS plan; rewrite schemas.json so it reflects the "
+        "current plan, then resume."
+    )
+
+
+def _schemas_drift_error(ctx: HarnessRuntime, state: dict[str, Any], stage: str) -> str | None:
+    """INV-3: schemas.json is frozen law after plan. Any post-plan modification
+    (or deletion) blocks before the tampering stage can commit it."""
+    if not ctx.PLAN_STAGE or not ctx.PLAN_SCHEMAS_REQUIRED:
+        return None
+    if stage == ctx.PLAN_STAGE:
+        return None  # the plan stage legitimately writes the schema
+
+    expected = state.get("plan_schemas_hash")
+    schemas_path = ctx.feature_schemas_path(state["feature_name"])
+    schemas_rel = ctx.rel(schemas_path)
+    if not isinstance(expected, str) or not expected:
+        plan_sha = (state.get("commits") or {}).get(ctx.PLAN_STAGE)
+        if not plan_sha:
+            return None  # plan has not committed yet; nothing is frozen
+        # Run predates the hash recording (started under Phase 1): fall back to
+        # the blob in the plan commit; if unavailable, skip with a logged note.
+        blob = ctx.git_show_file(str(plan_sha), schemas_rel)
+        if blob is None:
+            ctx.log_event(
+                state,
+                "schemas_drift_check_skipped",
+                "no recorded plan schemas hash and no plan-commit blob; drift guard skipped",
+                stage=stage,
+                console=False,
+            )
+            return None
+        expected = hashlib.sha256(blob).hexdigest()
+        state["plan_schemas_hash"] = expected
+
+    current = ctx.file_hash(schemas_path) if schemas_path.exists() else None
+    if current == expected:
+        return None
+    what = "was modified" if current is not None else "was deleted"
+    return (
+        f"Frozen schemas artifact {what} after the plan stage: {schemas_rel} (INV-3: "
+        "only plan creates/modifies the schema; downstream stages bind read-only). "
+        f"Restore the plan-time file (e.g. git checkout <plan-sha> -- {schemas_rel}) "
+        "and resume, or rerun the plan stage if the interface genuinely must change."
+    )
 
 
 def _format_run_start_dirty_message(paths: list[str]) -> str:
@@ -414,8 +493,9 @@ def _format_run_start_dirty_message(paths: list[str]) -> str:
         "Cannot start a new harness run because implementation paths are already dirty.",
         "",
         "The harness creates local commits for successful stages and treats run start as",
-        "the clean baseline. Starting with dirty src/ or tests/ paths can make a later",
-        "stage commit exclude real changes.",
+        "the clean baseline. Starting with dirty src/, tests/ or .project/features/ paths",
+        "can make a later stage commit exclude real changes (e.g. a plan commit silently",
+        "missing schemas.json).",
         "",
         "Dirty implementation paths:",
     ]
@@ -429,13 +509,13 @@ def _format_run_start_dirty_message(paths: list[str]) -> str:
             "",
             "What to do next:",
             "  1. Inspect the existing implementation changes:",
-            "     git status --short src tests",
-            "     git diff -- src tests",
+            "     git status --short src tests .project/features",
+            "     git diff -- src tests .project/features",
             "  2. If these changes should be kept as current work, commit them yourself first:",
-            "     git add src tests",
+            "     git add src tests .project/features",
             "     git commit -m \"save existing implementation changes\"",
             "  3. If you want to set them aside temporarily, stash them yourself:",
-            "     git stash push -u -- src tests",
+            "     git stash push -u -- src tests .project/features",
             "  4. If these changes belong to an incomplete harness run, finish that run with resume/retry",
             "     instead of starting a new run:",
             "     python .ai/harness.py todo",
@@ -544,12 +624,18 @@ def create_run(
     deep_thinking: bool = False,
     performance: Any | None = None,
     strategy: Any | None = None,
+    cross_validation: bool = False,
 ) -> dict[str, Any]:
     if defaults_mode and interactive_mode:
         raise HarnessError("--defaults and --interactive cannot be used together.")
     strategy_name = str(strategy).strip().lower() if strategy else None
     if deep_thinking:
         ctx.validate_deep_thinking_ready()
+    if cross_validation and not pipeline.supports_cross_validation(ctx.PIPELINE_MODE):
+        raise HarnessError(
+            "--cross-validation is only supported by the full pipeline "
+            f"(current mode: {ctx.PIPELINE_MODE})."
+        )
     ctx.warn_pending_pc_candidates_for_new_run()
     ctx.assert_prev_run_branch_merged()
     ctx.assert_no_incomplete_runs_for_new_run()
@@ -590,6 +676,14 @@ def create_run(
         "events": [],
     }
     ctx.ensure_provider_schedule(state, persist=False, console=False, record_event=False)
+    if cross_validation:
+        # Hard availability gate (사전 결정 8): the blind track needs a
+        # code-write author distinct from the impl developer plus an
+        # uninvolved judge -- refuse the run up front when that cannot be
+        # staffed, instead of failing mid-pipeline.
+        state["cross_validation"] = True
+        state["xv_assignments"] = xv_core.assert_ready(ctx, state)
+        state["xv_rounds_used"] = 0
     ctx.save_state(state)
     ctx.log_event(
         state,
@@ -601,6 +695,7 @@ def create_run(
         defaults_mode=defaults_mode,
         interactive_mode=interactive_mode,
         deep_thinking=bool(deep_thinking),
+        cross_validation=bool(cross_validation),
     )
     if run_branch:
         ctx.log_event(
@@ -1102,13 +1197,22 @@ def resume_run(ctx: HarnessRuntime, feature: str, max_verify_fix_retries: int = 
         raise HarnessError(f"Invalid or missing status in {ctx.rel(output)}: {status!r}")
 
     violations = ctx.write_policy_violations(state, stage)
+    violations.extend(xv_core.partition_violations(ctx, state, stage))
     if violations:
-        block_state(ctx, 
+        block_state(ctx,
             state,
             stage,
             "Write policy violation: " + "; ".join(violations),
             stage,
         )
+        return state
+
+    # INV-3 drift guard (Phase 2): checked before the status branches so a
+    # FAIL/NEEDS_USER outcome cannot mask schema tampering, and before any
+    # commit so the tampered file never enters git history via a stage commit.
+    drift_error = _schemas_drift_error(ctx, state, stage)
+    if drift_error:
+        block_state(ctx, state, stage, drift_error, stage)
         return state
 
     if status == ResultStatus.NEEDS_USER and state.get("interactive_mode"):
@@ -1121,6 +1225,29 @@ def resume_run(ctx: HarnessRuntime, feature: str, max_verify_fix_retries: int = 
     if status == ResultStatus.FAIL and stage != ctx.VERIFY_STAGE:
         block_state(ctx, state, stage, result.get("blocking_reason") or "Stage failed.", next_stage)
         return state
+
+    if (
+        ctx.PLAN_STAGE
+        and ctx.PLAN_SCHEMAS_REQUIRED
+        and status == ResultStatus.PASS
+        and stage == ctx.PLAN_STAGE
+    ):
+        # The plan stage must leave a valid feature-level schemas.json before
+        # anything downstream binds to it (INV-3: the schema is frozen law).
+        # Blocking here keeps the invalid artifact out of the plan commit.
+        schemas_error = ctx.validate_feature_schemas(state["feature_name"])
+        if schemas_error:
+            block_state(ctx, state, stage, schemas_error, stage)
+            return state
+        stale_error = _plan_schemas_stale_error(ctx, state)
+        if stale_error:
+            block_state(ctx, state, stage, stale_error, stage)
+            return state
+        # Freeze baseline for the Phase 2 drift guard: downstream stages must
+        # leave the artifact byte-identical to this plan-time content.
+        state["plan_schemas_hash"] = ctx.file_hash(
+            ctx.feature_schemas_path(state["feature_name"])
+        )
 
     if ctx.DOCUMENT_STAGE and status == ResultStatus.PASS and stage == ctx.DOCUMENT_STAGE:
         artifact_error = validate_document_stage_artifacts(ctx, state["feature_name"])
@@ -1139,7 +1266,82 @@ def resume_run(ctx: HarnessRuntime, feature: str, max_verify_fix_retries: int = 
     if stage == ctx.VERIFY_STAGE:
         status, next_stage = ctx.enforce_harness_verify_result(state, result, status, next_stage)
 
-    if stage == ctx.VERIFY_STAGE and status == ResultStatus.FAIL:
+    if (
+        stage == ctx.VERIFY_STAGE
+        and status == ResultStatus.PASS
+        and ctx.PLAN_STAGE
+        and ctx.SCHEMAS_CONFORMANCE_REQUIRED
+    ):
+        # Phase 2: the implementation must statically conform to the frozen
+        # schemas.json. Non-conformance is a verify FAIL (routed into the
+        # existing verify->fix retry loop), not a block -- the schema stays the
+        # law and the code moves toward it (INV-5).
+        conformance_error, conformance_warnings = ctx.validate_feature_schemas_conformance(
+            state["feature_name"]
+        )
+        for warning in conformance_warnings:
+            ctx.log_event(state, "schemas_conformance_warning", warning, stage=stage, console=False)
+        if conformance_error:
+            status = ResultStatus.FAIL
+            next_stage = ctx.VERIFY_RETRY_TARGET_STAGE
+            result["status"] = ResultStatus.FAIL
+            result["next_stage"] = next_stage
+            result["harness_commit_required"] = False
+            result["blocking_reason"] = conformance_error
+            # Carry the reason to the fix stage via the proven channel: the fix
+            # prompt is fed 05_verify.result.json (stage_runtime additional
+            # inputs), so persist the downgraded verdict + per-symbol fix_inputs
+            # there. Without this the on-disk verify result still says PASS and
+            # the fix agent re-enters blind, burning the whole retry budget.
+            violations = [
+                line[2:].strip()
+                for line in conformance_error.splitlines()
+                if line.startswith("- ")
+            ]
+            result["fix_inputs"] = {
+                "reason": "schema conformance failure (harness static check)",
+                "items": violations or [conformance_error],
+                "authoritative": True,
+            }
+            verify_result_path = ctx.stage_result_json_path(state["feature_name"], stage)
+            try:
+                ctx.write_json_file(verify_result_path, result)
+            except OSError as exc:
+                ctx.log_event(
+                    state,
+                    "schemas_conformance_persist_failed",
+                    f"could not persist conformance verdict to {ctx.rel(verify_result_path)}: {exc}",
+                    stage=stage,
+                    console=False,
+                )
+            ctx.log_event(
+                state,
+                "schemas_conformance_failed",
+                "implementation does not conform to schemas.json",
+                stage=stage,
+            )
+
+    if (
+        stage == ctx.VERIFY_STAGE
+        and status == ResultStatus.PASS
+        and xv_core.enabled(state)
+    ):
+        # Phase 3 join: the blind acceptance track meets the implementation.
+        # Runs after harness verification + schema conformance so a CLEAN
+        # verdict really means "independently derived tests pass on a
+        # conformant implementation". CONFLICT either re-enters the existing
+        # verify->fix rail (impl fault, separate xv round budget) or blocks
+        # (quarantine: spec ambiguity / exhausted budget / infra failure).
+        directive = xv_core.process_join(ctx, state, result)
+        action = str(directive.get("action") or "")
+        if action == "block":
+            block_state(ctx, state, stage, str(directive.get("reason") or "cross-validation blocked"), stage)
+            return state
+        if action == "fix":
+            status = ResultStatus.FAIL
+            next_stage = ctx.VERIFY_RETRY_TARGET_STAGE
+
+    if stage == ctx.VERIFY_STAGE and status == ResultStatus.FAIL and not result.get("xv_routing"):
         retries_used = int(state.get("verify_fix_retries_used", 0))
         if retries_used >= max_verify_fix_retries:
             block_state(ctx,
@@ -1156,6 +1358,16 @@ def resume_run(ctx: HarnessRuntime, feature: str, max_verify_fix_retries: int = 
 
     commit_for_stage(ctx, state, stage, result)
 
+    if (
+        ctx.PLAN_STAGE
+        and stage == ctx.PLAN_STAGE
+        and status == ResultStatus.PASS
+        and xv_core.enabled(state)
+    ):
+        # Phase 3 fork point: the plan commit exists now, so the blind track
+        # can derive from it in parallel while develop..verify run here.
+        xv_core.start_track_async(ctx, state)
+
     if stage == ctx.VERIFY_STAGE and status == ResultStatus.FAIL:
         write_handoff(ctx,
             state,
@@ -1164,23 +1376,35 @@ def resume_run(ctx: HarnessRuntime, feature: str, max_verify_fix_retries: int = 
             next_action=f"{ctx.VERIFY_RETRY_TARGET_STAGE} 단계가 이 실패를 수정해야 합니다.",
             result=result,
         )
-        # Increment the retry counter together with the stage transition so a
-        # single save (generate_prompt below) persists both atomically.
-        # Persisting the counter while current_stage was still the verify stage
-        # left a crash window where resume would re-count the same failure and
-        # double-spend the retry budget. write_handoff does not save run.json,
-        # so nothing persists the incremented counter before this point.
-        state["verify_fix_retries_used"] = int(state.get("verify_fix_retries_used", 0)) + 1
+        if result.get("xv_routing"):
+            # Cross-validation re-entry consumes the separate adjudication
+            # budget (xv_rounds_used, incremented at join); the verify/fix
+            # budget stays untouched so the two limits cannot interfere.
+            ctx.log_event(
+                state,
+                "xv_fix_reentry",
+                "re-entering fix for cross-validation impl fault",
+                stage=stage,
+                xv_rounds_used=int(state.get("xv_rounds_used", 0)),
+            )
+        else:
+            # Increment the retry counter together with the stage transition so a
+            # single save (generate_prompt below) persists both atomically.
+            # Persisting the counter while current_stage was still the verify stage
+            # left a crash window where resume would re-count the same failure and
+            # double-spend the retry budget. write_handoff does not save run.json,
+            # so nothing persists the incremented counter before this point.
+            state["verify_fix_retries_used"] = int(state.get("verify_fix_retries_used", 0)) + 1
+            ctx.log_event(
+                state,
+                "verify_fix_retry_recorded",
+                "recorded verify/fix retry",
+                stage=stage,
+                retries_used=state["verify_fix_retries_used"],
+                max_verify_fix_retries=max_verify_fix_retries,
+            )
         state["current_stage"] = ctx.VERIFY_RETRY_TARGET_STAGE
         state["status"] = RunStatus.WAITING_FOR_MODEL
-        ctx.log_event(
-            state,
-            "verify_fix_retry_recorded",
-            "recorded verify/fix retry",
-            stage=stage,
-            retries_used=state["verify_fix_retries_used"],
-            max_verify_fix_retries=max_verify_fix_retries,
-        )
         ctx.log_event(
             state,
             "verify_failed_returning_to_development",
@@ -1227,6 +1451,17 @@ def approve_run(ctx: HarnessRuntime, feature: str, max_verify_fix_retries: int =
     stage = blocked.get("stage")
     if not stage:
         raise HarnessError("Blocked state has no stage.")
+    if str(blocked.get("reason") or "").startswith(xv_core.QUARANTINE_MARKER):
+        # Approving a cross-validation quarantine is an explicit human
+        # override of the CONFLICT (INV-7: never a silent auto-pass). The
+        # decision record marks it as human-overridden at the re-join.
+        state["xv_override"] = True
+        ctx.log_event(
+            state,
+            "xv_quarantine_override",
+            "human approved a quarantined cross-validation CONFLICT",
+            stage=stage,
+        )
     approved_stages = state.setdefault("approved_stages", [])
     if stage not in approved_stages:
         approved_stages.append(stage)

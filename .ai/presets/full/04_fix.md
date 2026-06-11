@@ -6,6 +6,7 @@ model_policy: "preferred_not_hard_block"
 required_inputs:
   - ".project/features/[기능명]/00_spec.md"
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
   - ".project/features/[기능명]/02_dev.md"
   - ".project/features/[기능명]/03_review.md"
 optional_inputs:
@@ -20,6 +21,7 @@ allowed_writes:
 forbidden_writes:
   - ".project/features/[기능명]/00_spec.md"
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
   - ".project/features/[기능명]/02_dev.md"
   - ".project/features/[기능명]/03_review.md"
   - ".project/features/[기능명]/05_verify.md"
@@ -39,6 +41,7 @@ default_next_stage: "05_verify"
 - 새 테스트 파일은 `tests/` 하위에만 만든다. `src/` 하위에 테스트 파일을 만들지 않는다.
 - `requirements.txt`, `run.ps1`, 설정 파일, 의존성 파일, 실행 스크립트 같은 보조 파일도 루트에 만들지 않는다. 필요하면 반드시 `src/` 또는 `tests/` 하위에 둔다.
 - `vendor/`, `packages/`, `dist/`, `build/` 등 외부/생성 산출물 디렉터리는 계획/수정/검증 대상에서 제외하고, 필요하면 생성물 또는 외부 산출물로만 기록한다.
+- `tests/acceptance/`는 블라인드 수용테스트 트랙의 예약 경로다. 이 단계에서 그 하위에 파일을 만들거나 수정하지 않는다. 새 테스트는 `tests/` 하위의 다른 경로(예: `tests/unit/`)에 둔다.
 
 ## 실행 정책
 
@@ -62,10 +65,12 @@ default_next_stage: "05_verify"
 1. 요청사항이 개선 불가능할 정도로 모호한 경우에만 `status: NEEDS_USER`로 멈춘다.
 2. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 위험도를 파악한다.
 3. `.project/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 위험 구간, 의존성, 테스트 전략을 파악한다.
+3-1. `.project/features/[기능명]/schemas.json`의 인터페이스 스키마를 파악한다. 스키마는 동결된 법이며 이 단계도 읽기 전용으로 바인딩한다. 수정 방향은 항상 "코드를 스키마에 맞춘다"이다.
 4. `.project/features/[기능명]/02_dev.md`를 읽고 원래 구현 의도와 Git 정보를 확인한다.
 5. `.project/features/[기능명]/03_review.md`를 읽고 리뷰 내용을 확인한다.
 6. `.project/features/[기능명]/05_verify.md`가 존재하고 최종 판정이 `FAIL`이면, 실패 항목과 `fix_inputs`를 03_review 이후의 추가 지적 사항으로 취급하여 우선 처리한다.
 7. `.project/runs/[기능명]/verification/latest.json`이 존재하면 하네스 검증 결과를 읽는다. `status: FAIL`이거나 `failed_commands`가 비어 있지 않으면 `05_verify.md`의 모델 판정보다 하네스 검증 결과를 우선한다.
+7-1. `.project/features/[기능명]/05_verify.result.json`의 `status`가 `FAIL`이면 하네스가 판정을 덮어쓴 것이므로 `05_verify.md`의 모델 서술보다 우선한다. 특히 `fix_inputs.authoritative: true`이고 `reason`이 스키마 적합성 실패면, `fix_inputs.items`의 각 항목(어느 심볼이 schemas.json과 어긋났는지)을 반드시 처리한다. 해결 방향은 항상 "코드를 schemas.json에 맞춘다"이다(스키마는 수정 금지).
 8. 각 지적 사항을 `수용 / 거부 / 보류 / 사용자 판단 요청`으로 분류한다.
 9. 수용한 항목에 대해 코드를 수정한다.
 10. 리뷰 또는 검증에서 누락 테스트를 지적했다면 루트 `tests/` 하위에 테스트를 추가한다.
@@ -114,6 +119,7 @@ default_next_stage: "05_verify"
 ## 개선 원칙
 
 - 리뷰와 검증 지적 사항의 범위 안에서 수정한다.
+- verify가 스키마 적합성 위반(심볼 부재/시그니처 불일치)으로 실패했으면, schemas.json의 선언에 맞게 **코드를** 고친다. schemas.json은 절대 수정하지 않는다(수정 시 하네스가 차단한다). 스키마 자체가 잘못됐다고 판단되면 `사용자 판단 요청`으로 멈추고 plan 복귀를 권고한다.
 - 이 단계는 `04_fix` stage 커밋을 하네스가 만들 수 있게 준비하는 단계이다.
 - 05_verify 실패 후 재진입한 경우에도 모델은 직접 amend하지 않고, 하네스가 기존 `04_fix` stage 커밋을 갱신할 수 있게 변경을 남긴다.
 - 수용한 항목을 반영할 때 기존 테스트가 깨지지 않는지 확인한다.
@@ -245,4 +251,5 @@ default_next_stage: "05_verify"
 - 거부 사유 없이 지적을 무시하지 않는다.
 - 애매한 판단을 사용자에게 묻지 않고 임의로 결정하지 않는다.
 - 기존 테스트를 삭제하거나 비활성화하지 않는다.
+- `tests/acceptance/` 하위에 파일을 만들거나 수정하지 않는다.
 - `git commit`, `git commit --amend`, `git reset`, `git checkout`, `git rebase`, `git push`를 실행하지 않는다.

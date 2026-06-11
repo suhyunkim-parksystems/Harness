@@ -39,10 +39,12 @@ class FakeProc:
         poll_value: int | None = None,
         returncode: int = 0,
         wait_timeout_raises: bool = False,
+        pid: int = 4321,
     ) -> None:
         self._poll_value = poll_value
         self.returncode = returncode
         self._wait_timeout_raises = wait_timeout_raises
+        self.pid = pid
         self.terminate_called = False
         self.kill_called = False
         self.wait_calls: list[float | None] = []
@@ -110,14 +112,24 @@ class StopProviderTeardownTests(unittest.TestCase):
         # graceful path waits once, with the 5s grace timeout
         self.assertEqual(proc.wait_calls, [5])
 
-    def test_running_escalates_to_kill_on_timeout(self) -> None:
+    def test_running_escalates_to_tree_kill_on_timeout(self) -> None:
+        # When the graceful terminate+wait(5) times out, the salvage path must
+        # escalate to a full process-tree kill (terminate alone leaves the .cmd
+        # shim's node grandchild alive on Windows).
         proc = FakeProc(poll_value=None, returncode=137, wait_timeout_raises=True)
-        result = stage_runtime.stop_provider_after_artifact_completion(proc)
+        killed: list[Any] = []
+        orig = stage_runtime.kill_process_tree
+        stage_runtime.kill_process_tree = lambda p, **kw: killed.append(p)
+        try:
+            result = stage_runtime.stop_provider_after_artifact_completion(proc)
+        finally:
+            stage_runtime.kill_process_tree = orig
         self.assertEqual(result, 137)
         self.assertTrue(proc.terminate_called)
-        self.assertTrue(proc.kill_called)
-        # first the graceful 5s wait (raises), then an unbounded wait after kill
-        self.assertEqual(proc.wait_calls, [5, None])
+        self.assertEqual(killed, [proc])
+        # only the graceful 5s wait happens in this function; the tree kill owns
+        # its own reaping wait
+        self.assertEqual(proc.wait_calls, [5])
 
 
 class HandleProviderTimeoutTests(unittest.TestCase):
@@ -142,22 +154,27 @@ class HandleProviderTimeoutTests(unittest.TestCase):
             "performance": "balanced",
         }
 
-        out = stage_runtime._handle_provider_timeout(
-            ctx,
-            state,
-            proc,
-            stage="01_develop",
-            provider="codex",
-            timeout_seconds=42,
-            started=time.time(),
-            stdout_path=self.stdout,
-            stderr_path=self.stderr,
-            cli_log_path=self.cli_log,
-        )
+        killed: list[Any] = []
+        orig = stage_runtime.kill_process_tree
+        stage_runtime.kill_process_tree = lambda p, **kw: killed.append(p)
+        try:
+            out = stage_runtime._handle_provider_timeout(
+                ctx,
+                state,
+                proc,
+                stage="01_develop",
+                provider="codex",
+                timeout_seconds=42,
+                started=time.time(),
+                stdout_path=self.stdout,
+                stderr_path=self.stderr,
+                cli_log_path=self.cli_log,
+            )
+        finally:
+            stage_runtime.kill_process_tree = orig
 
-        # process was force-killed and reaped
-        self.assertTrue(proc.kill_called)
-        self.assertIn(None, proc.wait_calls)
+        # the whole process tree was killed (not just the direct child)
+        self.assertEqual(killed, [proc])
         # run is blocked with a timeout reason
         self.assertIs(out, state)
         self.assertEqual(state["status"], RunStatus.BLOCKED)
@@ -176,24 +193,62 @@ class HandleProviderTimeoutTests(unittest.TestCase):
         proc = FakeProc(poll_value=None, returncode=137)
         state = {"feature_name": "demo", "current_stage": "01_develop", "pipeline_mode": "standard"}
 
-        stage_runtime._handle_provider_timeout(
-            ctx,
-            state,
-            proc,
-            stage="01_develop",
-            provider="codex",
-            timeout_seconds=10,
-            started=time.time(),
-            stdout_path=self.stdout,
-            stderr_path=self.stderr,
-            cli_log_path=self.cli_log,
-        )
+        orig = stage_runtime.kill_process_tree
+        stage_runtime.kill_process_tree = lambda p, **kw: None
+        try:
+            stage_runtime._handle_provider_timeout(
+                ctx,
+                state,
+                proc,
+                stage="01_develop",
+                provider="codex",
+                timeout_seconds=10,
+                started=time.time(),
+                stdout_path=self.stdout,
+                stderr_path=self.stderr,
+                cli_log_path=self.cli_log,
+            )
+        finally:
+            stage_runtime.kill_process_tree = orig
 
         failed = next(fields for event, _msg, fields in records["events"] if event == "provider_failed")
         # tails are surfaced into the failure event for operator triage
         self.assertIn("stdout_tail", failed)
         self.assertIn("still working", failed["stdout_tail"])
         self.assertIn("stderr_tail", failed)
+
+    def test_timeout_with_head_change_blocks_as_tamper(self) -> None:
+        # H6: a provider that committed (changed HEAD) before hanging must be
+        # caught by the HEAD-tamper guard, not laundered into a plain timeout
+        # that a fresh retry would silently absorb.
+        ctx, records = make_recording_ctx(self.root)
+        ctx.safe_git_head = lambda: "HEAD_AFTER"  # type: ignore[attr-defined]
+        proc = FakeProc(poll_value=None, returncode=137)
+        state = {"feature_name": "demo", "current_stage": "01_develop", "pipeline_mode": "standard"}
+
+        orig = stage_runtime.kill_process_tree
+        stage_runtime.kill_process_tree = lambda p, **kw: None
+        try:
+            stage_runtime._handle_provider_timeout(
+                ctx,
+                state,
+                proc,
+                stage="01_develop",
+                provider="codex",
+                timeout_seconds=10,
+                started=time.time(),
+                stdout_path=self.stdout,
+                stderr_path=self.stderr,
+                cli_log_path=self.cli_log,
+                before_head="HEAD_BEFORE",
+            )
+        finally:
+            stage_runtime.kill_process_tree = orig
+
+        self.assertEqual(state["status"], RunStatus.BLOCKED)
+        events = [event for event, _msg, _fields in records["events"]]
+        self.assertIn("blocked_provider_changed_head", events)
+        self.assertNotIn("provider_failed", events)
 
 
 class ArtifactSignatureTests(unittest.TestCase):
@@ -244,6 +299,53 @@ class GitHeadChangedTests(unittest.TestCase):
     def test_empty_heads_are_unchanged(self) -> None:
         self.assertFalse(stage_runtime.git_head_changed(self.ctx, "", "bbb"))
         self.assertFalse(stage_runtime.git_head_changed(self.ctx, "aaa", ""))
+
+
+class KillProcessTreeTests(unittest.TestCase):
+    """The whole-tree kill is what makes the timeout/salvage paths reach the
+    real agent (a grandchild of the .cmd shim) on Windows."""
+
+    def test_already_exited_is_noop(self) -> None:
+        from harness_core import process as process_core
+
+        proc = FakeProc(poll_value=0, returncode=0)
+        recorded: list[Any] = []
+        orig_run = process_core.subprocess.run
+        process_core.subprocess.run = lambda *a, **k: recorded.append(a)  # type: ignore[assignment]
+        try:
+            process_core.kill_process_tree(proc)
+        finally:
+            process_core.subprocess.run = orig_run
+        # nothing spawned, nothing killed -- the process is already gone
+        self.assertEqual(recorded, [])
+        self.assertFalse(proc.kill_called)
+
+    def test_running_process_is_torn_down(self) -> None:
+        import sys
+
+        from harness_core import process as process_core
+
+        proc = FakeProc(poll_value=None, returncode=137, pid=4321)
+        recorded: list[tuple[Any, ...]] = []
+        orig_run = process_core.subprocess.run
+        process_core.subprocess.run = lambda *a, **k: recorded.append(a)  # type: ignore[assignment]
+        try:
+            process_core.kill_process_tree(proc)
+        finally:
+            process_core.subprocess.run = orig_run
+
+        if sys.platform == "win32":
+            # Windows: taskkill /F /T against the pid; proc.kill() is NOT enough.
+            self.assertEqual(len(recorded), 1)
+            argv = recorded[0][0]
+            self.assertEqual(argv[0], "taskkill")
+            self.assertIn("/T", argv)
+            self.assertIn("4321", argv)
+        else:
+            # POSIX: direct kill of the child.
+            self.assertTrue(proc.kill_called)
+        # the helper reaps the process so it can't linger as a zombie
+        self.assertTrue(proc.wait_calls)
 
 
 if __name__ == "__main__":

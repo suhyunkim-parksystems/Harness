@@ -78,6 +78,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "",
             "출력:",
             "최종 `01_plan.md`와 result JSON을 작성한다. 이 결과만 실제 `01_plan` stage 산출물로 인정된다.",
+            "인터페이스 스키마 `.project/features/<기능명>/schemas.json`도 `01_plan` 프리셋의 `인터페이스 스키마 작성` 절에 따라 반드시 작성한다(누락/불완전 시 plan 검증 실패).",
             "최종 문서는 반드시 한국어로 작성하고, 일반적인 `01_plan.md`처럼 보여야 한다.",
         ],
     },
@@ -135,6 +136,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "",
             "출력:",
             "최종 `01_plan.md`와 result JSON을 작성한다. 이 결과만 실제 `01_plan` stage 산출물로 인정된다.",
+            "인터페이스 스키마 `.project/features/<기능명>/schemas.json`도 `01_plan` 프리셋의 `인터페이스 스키마 작성` 절에 따라 반드시 작성한다(누락/불완전 시 plan 검증 실패).",
             "사전 부검 과정은 'pre-mortem' 같은 표현 없이 위험 구간/완화/테스트 전략에 자연스럽게 녹인다.",
             "최종 문서는 반드시 한국어로 작성하고, 일반적인 `01_plan.md`처럼 보여야 한다.",
         ],
@@ -191,6 +193,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "출력:",
                 "최종 `01_plan.md`와 result JSON을 작성한다.",
                 "이 결과만 실제 `01_plan` stage 산출물로 인정된다.",
+                "인터페이스 스키마 `.project/features/<기능명>/schemas.json`도 `01_plan` 프리셋의 `인터페이스 스키마 작성` 절에 따라 반드시 작성한다(누락/불완전 시 plan 검증 실패).",
                 "최종 문서는 반드시 한국어로 작성하고, 일반적인 `01_plan.md`처럼 보여야 한다.",
             ],
         },
@@ -450,6 +453,7 @@ def _iteration_prompt(ctx: HarnessRuntime,
         # there is no contradictory "write official / do not write official" override.
         text = base_prompt.replace(ctx.rel(official_result_json), ctx.rel(result_json_path))
         text = text.replace(ctx.rel(official_output), ctx.rel(output_path))
+        text = _redirect_schemas_path(ctx, text, official_output, output_path)
 
     instruction = "\n".join(_instruction_lines(config, iteration)).strip() or "- 추가 내부 지시 없음"
     return (
@@ -484,6 +488,43 @@ def _read_candidate(
     if not result:
         return None
     return output, text, result
+
+
+def _official_schemas_path(official_output: Path) -> Path:
+    # The feature-level interface schemas artifact lives next to the stage
+    # outputs (.project/features/<feature>/schemas.json).
+    return official_output.parent / "schemas.json"
+
+
+def _schemas_path_for(candidate_output: Path) -> Path:
+    # Temp schemas artifact paired with an intermediate candidate output
+    # (e.g. 01_plan_draft_codex.md -> 01_plan_draft_codex.schemas.json).
+    return candidate_output.with_suffix(".schemas.json")
+
+
+def _redirect_schemas_path(ctx: HarnessRuntime, text: str, official_output: Path, candidate_output: Path) -> str:
+    # Intermediate steps must not touch the official schemas.json (it is the
+    # frozen plan artifact); point the preset's schemas path at a temp file
+    # paired with the candidate, exactly like the output/result redirects.
+    return text.replace(
+        ctx.rel(_official_schemas_path(official_output)),
+        ctx.rel(_schemas_path_for(candidate_output)),
+    )
+
+
+def _promote_schemas_artifact(candidate_output: Path, official_output: Path) -> None:
+    """Copy a candidate's temp schemas.json to the official location.
+
+    Used when a draft is promoted to the official plan without a final
+    synthesis pass: the draft wrote its schemas to a temp path (isolation), so
+    the artifact must be promoted too or plan validation fails on a missing
+    schemas.json."""
+    source = _schemas_path_for(candidate_output)
+    if not source.exists():
+        return
+    target = _official_schemas_path(official_output)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source.read_bytes())
 
 
 def _write_official_result(output: Path, result_json: Path, text: str, result: dict[str, Any]) -> None:
@@ -682,6 +723,7 @@ def _draft_prompt(ctx: HarnessRuntime,
     text = base_prompt
     text = text.replace(ctx.rel(official_result_json), ctx.rel(draft_result_json))
     text = text.replace(ctx.rel(official_output), ctx.rel(draft_output))
+    text = _redirect_schemas_path(ctx, text, official_output, draft_output)
     instruction = "\n".join(_instruction_block_lines(config, "draft_instruction")).strip()
     if not instruction:
         instruction = "- 추가 내부 지시 없음"
@@ -888,7 +930,7 @@ def _execute_parallel_plan(
 
     official_output = ctx.stage_output_path(feature, stage)
     official_result_json = ctx.stage_result_json_path(feature, stage)
-    backups = _official_backups([official_output, official_result_json])
+    backups = _official_backups([official_output, official_result_json, _official_schemas_path(official_output)])
 
     drafters = _select_drafters(ctx, config)
     min_drafters = _min_drafters(config)
@@ -925,6 +967,7 @@ def _execute_parallel_plan(
         draft_result_json = temp_dir / f"{stage}_draft_{provider}.result.json"
         _cleanup_temp_path(draft_output)
         _cleanup_temp_path(draft_result_json)
+        _cleanup_temp_path(_schemas_path_for(draft_output))
         specs.append(
             {
                 "provider": provider,
@@ -1032,6 +1075,10 @@ def _execute_parallel_plan(
     if len(candidates) == 1:
         only = candidates[0]
         _write_official_result(official_output, official_result_json, only["output_text"], only["result"])
+        # The promoted draft wrote its interface schemas to its temp path
+        # (blind isolation); promote that artifact too or plan validation
+        # fails on a missing schemas.json.
+        _promote_schemas_artifact(ctx.ROOT / str(only["output_path"]), official_output)
         ctx.log_event(
             state,
             "deep_thinking_single_candidate",
@@ -1157,6 +1204,7 @@ def _relay_step_prompt(ctx: HarnessRuntime,
     else:
         text = base_prompt.replace(ctx.rel(official_result_json), ctx.rel(step_result_json))
         text = text.replace(ctx.rel(official_output), ctx.rel(step_output))
+        text = _redirect_schemas_path(ctx, text, official_output, step_output)
     if "select" in roles:
         input_block = (
             "## Deep Thinking 종합 대상 후보 계획 (익명)\n\n"
@@ -1240,6 +1288,7 @@ def _collect_max_drafts(
         draft_result_json = temp_dir / f"{stage}_draft_{provider}.result.json"
         _cleanup_temp_path(draft_output)
         _cleanup_temp_path(draft_result_json)
+        _cleanup_temp_path(_schemas_path_for(draft_output))
         specs.append(
             {
                 "provider": provider,
@@ -1338,7 +1387,7 @@ def _execute_max_plan(
 
     official_output = ctx.stage_output_path(feature, stage)
     official_result_json = ctx.stage_result_json_path(feature, stage)
-    backups = _official_backups([official_output, official_result_json])
+    backups = _official_backups([official_output, official_result_json, _official_schemas_path(official_output)])
 
     drafters = _select_drafters(ctx, config)
     min_drafters = _min_drafters(config)
@@ -1448,6 +1497,7 @@ def _execute_max_plan(
             step_result_json = temp_dir / f"{stage}_relay{index}_{provider}.result.json"
             _cleanup_temp_path(step_output)
             _cleanup_temp_path(step_result_json)
+            _cleanup_temp_path(_schemas_path_for(step_output))
 
         prompt_text = _relay_step_prompt(ctx, 
             base_prompt=base_prompt,
@@ -1576,7 +1626,7 @@ def _execute_relay_plan(
     base_prompt = prompt_file.read_text(encoding="utf-8")
     official_output = ctx.stage_output_path(feature, stage)
     official_result_json = ctx.stage_result_json_path(feature, stage)
-    backups = _official_backups([official_output, official_result_json])
+    backups = _official_backups([official_output, official_result_json, _official_schemas_path(official_output)])
     providers = _select_iteration_providers(ctx, state, config)
     iterations = _iterations(config)
     temp_dir = ctx.run_dir(feature) / ".tmp" / "deep_thinking"
@@ -1609,6 +1659,7 @@ def _execute_relay_plan(
             result_json_path = temp_dir / f"{stage}_candidate{index}.result.json"
             _cleanup_temp_path(output_path)
             _cleanup_temp_path(result_json_path)
+            _cleanup_temp_path(_schemas_path_for(output_path))
 
         prompt_text = _iteration_prompt(ctx, 
             base_prompt=base_prompt,
@@ -1722,6 +1773,7 @@ def _execute_relay_plan(
             if not persist_intermediate:
                 _cleanup_temp_path(output_path)
                 _cleanup_temp_path(result_json_path)
+                _cleanup_temp_path(_schemas_path_for(output_path))
             ctx.log_event(
                 state,
                 "deep_thinking_candidate_completed",
@@ -1739,6 +1791,7 @@ def _execute_relay_plan(
             if not persist_intermediate:
                 _cleanup_temp_path(output_path)
                 _cleanup_temp_path(result_json_path)
+                _cleanup_temp_path(_schemas_path_for(output_path))
         elif not official_result_json.exists() and candidate_result:
             official_result_json.write_text(
                 json.dumps(candidate_result, ensure_ascii=False, indent=2) + "\n",

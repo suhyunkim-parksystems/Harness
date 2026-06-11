@@ -47,6 +47,7 @@ PIPELINES = {
         "verify_retry_target": "04_fix",
         "verify_pass_next": "06_document",
         "document_stage": "06_document",
+        "plan_stage": "01_plan",
     },
 }
 
@@ -137,15 +138,70 @@ def write_stage_output(path: Path, stage: str, result: dict[str, Any]) -> None:
     path.write_text("\n".join(body), encoding="utf-8")
 
 
-def write_app(fixed: bool) -> None:
+def write_app(fixed: bool, *, broken: bool = False) -> None:
+    # broken=True simulates an impl that satisfies the harness verify check
+    # (FIXED flag) while violating the schema's return-value enum -- only the
+    # blind acceptance track can catch it.
     path = Path("src") / "app.py"
     path.parent.mkdir(parents=True, exist_ok=True)
+    body = (
+        "    return 'broken'\n"
+        if broken
+        else "    return 'fixed' if FIXED else 'needs-fix'\n"
+    )
     path.write_text(
         "FIXED = " + ("True" if fixed else "False") + "\n\n"
-        "def answer() -> str:\n"
-        "    return 'fixed' if FIXED else 'needs-fix'\n",
+        "def answer() -> str:\n" + body,
         encoding="utf-8",
     )
+
+
+def write_minimal_schemas(feature: str, *, nonconformant: bool = False) -> Path:
+    # nonconformant=True declares a symbol that the fake implementation never
+    # creates, so the Phase 2 conformance check must downgrade verify to FAIL.
+    symbol_name = "missing_function" if nonconformant else "answer"
+    path = Path(".project") / "features" / feature / "schemas.json"
+    schemas = {
+        "version": 1,
+        "feature": feature,
+        "frozen": True,
+        "plan_sha": None,
+        "specifiable": True,
+        "symbols": [
+            {
+                "id": f"src/app.py::{symbol_name}",
+                "kind": "function",
+                "change": "new" if nonconformant else "modify",
+                "signature": {
+                    "name": symbol_name,
+                    "parameter_order": [],
+                    "parameters": {},
+                    "returns": {
+                        "type": "str",
+                        "nullable": False,
+                        "fields": {},
+                        "constraints": [
+                            {"rule": "enum", "values": ["fixed", "needs-fix"]}
+                        ],
+                    },
+                },
+                "errors": [],
+                "invariants": [
+                    {
+                        "rule": "deterministic",
+                        "description": "same FIXED flag always yields the same string",
+                    }
+                ],
+                "ambiguity_resolutions": [],
+            }
+        ],
+        "tree_partition": {
+            "impl_writes": ["src/", "tests/unit/"],
+            "test_writes": ["tests/acceptance/"],
+        },
+    }
+    write_json(path, schemas)
+    return path
 
 
 def write_minimal_docx(feature: str) -> Path:
@@ -190,6 +246,125 @@ def commit_provider_changes() -> bool:
     return True
 
 
+XV_BASE_TESTS = '''"""Blind acceptance tests written by the fake provider."""
+from src.app import answer
+
+
+def test_answer_returns_string():
+    """XV-CASE: xv-case-1"""
+    assert isinstance(answer(), str)
+
+
+def test_answer_enum():
+    """XV-CASE: xv-case-2"""
+    assert answer() in {"fixed", "needs-fix"}
+
+
+def test_answer_deterministic():
+    """XV-CASE: xv-case-3"""
+    assert answer() == answer()
+'''
+
+XV_OVERSPEC_TEST = '''
+
+def test_answer_overspecified():
+    """XV-CASE: xv-case-1 (overspecified: the schema only pins the enum)"""
+    assert answer() == "needs-fix"
+'''
+
+
+def xv_manifest(feature: str) -> dict[str, Any]:
+    symbol = "src/app.py::answer"
+    return {
+        "version": 1,
+        "feature": feature,
+        "cases": [
+            {
+                "id": "xv-case-1",
+                "symbol_id": symbol,
+                "target": {"type": "signature", "ref": "returns.type"},
+                "input_class": "normal",
+                "citation": "schemas.json: returns.type str",
+                "description": "return value is a string",
+                "expected": "str instance",
+            },
+            {
+                "id": "xv-case-2",
+                "symbol_id": symbol,
+                "target": {"type": "constraint", "ref": "returns.constraints.enum"},
+                "input_class": "boundary",
+                "citation": "schemas.json: returns.constraints enum [fixed, needs-fix]",
+                "description": "return value stays inside the declared enum",
+                "expected": "value in {fixed, needs-fix}",
+            },
+            {
+                "id": "xv-case-3",
+                "symbol_id": symbol,
+                "target": {"type": "invariant", "ref": "deterministic"},
+                "input_class": "violation",
+                "citation": "schemas.json: invariants deterministic",
+                "description": "same flag yields the same string on repeated calls",
+                "expected": "answer() == answer()",
+            },
+        ],
+    }
+
+
+def xv_failing_tests_from_prompt(prompt: str) -> list[str]:
+    section = prompt.split("## Failing acceptance tests", 1)
+    names: list[str] = []
+    if len(section) == 2:
+        for match in re.finditer(r'"test"\s*:\s*"([^"]+)"', section[1]):
+            names.append(match.group(1))
+    return names
+
+
+def handle_xv_prompt(prompt: str) -> int:
+    mode = os.environ.get("HARNESS_FAKE_PROVIDER_MODE", "").strip().lower()
+    step = prompt_value(prompt, "xv_step")
+    feature = prompt_value(prompt, "feature_name") or "selftest-demo"
+    capture = prompt_value(prompt, "capture_file")
+
+    def emit(value: dict[str, Any]) -> int:
+        if capture:
+            write_json(Path(capture), value)
+        print(json.dumps(value, ensure_ascii=False))
+        return 0
+
+    if step == "design":
+        return emit(xv_manifest(feature))
+    if step in {"author", "rewrite"}:
+        # cwd is the blind clone; the rewrite step drops the overspecified test.
+        target = Path("tests") / "acceptance" / "test_xv.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        body = XV_BASE_TESTS
+        if step == "author" and mode in {"xv-test-overspec", "xv-spec-ambiguous"}:
+            body += XV_OVERSPEC_TEST
+        target.write_text(body, encoding="utf-8")
+        print(f"HARNESS_FAKE_PROVIDER_OK xv-{step}")
+        return 0
+    if step == "review":
+        return emit({"approved": True, "findings": []})
+    if step == "arbiter":
+        verdict = "impl_fault"
+        if mode == "xv-test-overspec":
+            verdict = "test_fault"
+        elif mode == "xv-spec-ambiguous":
+            verdict = "spec_ambiguous"
+        classifications = [
+            {
+                "test": name,
+                "verdict": verdict,
+                "citation": "schemas.json: returns.constraints enum [fixed, needs-fix]",
+                "explanation": f"fake arbiter classified {name} as {verdict}",
+            }
+            for name in xv_failing_tests_from_prompt(prompt)
+        ]
+        return emit({"classifications": classifications})
+    print(f"fake provider does not understand xv step {step!r}", file=sys.stderr)
+    return 2
+
+
 def handle_pc_candidate_prompt(prompt: str) -> int:
     result = {"candidates": []}
     capture_abs = prompt_value(prompt, "absolute_path")
@@ -217,6 +392,7 @@ def run_stage(prompt: str) -> int:
     verify_retry_target = str(config["verify_retry_target"])
     develop_stage = str(config["develop_stage"])
     document_stage = str(config.get("document_stage") or "")
+    plan_stage = str(config.get("plan_stage") or "")
 
     if mode == "provider-nonzero" and stage == "00_specify":
         print("fake provider intentional non-zero exit", file=sys.stderr)
@@ -234,10 +410,29 @@ def run_stage(prompt: str) -> int:
         result["changed_files"] = ["src/app.py"]
         if fixed:
             result["history_notes"]["implemented"] = [{"title": "Applied retry fix after verify failure"}]
+        if mode == "xv-impl-writes-acceptance":
+            # Rogue impl agent invades the blind track's exclusive territory;
+            # the flag-gated tree-partition guard must block before commit.
+            rogue = Path("tests") / "acceptance" / "test_rogue.py"
+            rogue.parent.mkdir(parents=True, exist_ok=True)
+            rogue.write_text("def test_rogue():\n    assert True\n", encoding="utf-8")
+            result["changed_files"] = ["src/app.py", "tests/acceptance/test_rogue.py"]
+        if mode == "schemas-drift" and plan_stage:
+            # Rogue agent: tampers with the frozen plan-stage schemas artifact.
+            # The harness drift guard must block before this stage commits.
+            schemas_path = Path(".project") / "features" / feature / "schemas.json"
+            if schemas_path.exists():
+                tampered = json.loads(schemas_path.read_text(encoding="utf-8"))
+                tampered["frozen"] = False
+                write_json(schemas_path, tampered)
     elif stage == verify_retry_target:
         prior_verify = prior_verify_result(feature, config)
+        fix_inputs = prior_verify.get("fix_inputs") if isinstance(prior_verify.get("fix_inputs"), dict) else {}
+        xv_reentry = "cross-validation" in str((fix_inputs or {}).get("reason") or "")
         if str(prior_verify.get("status") or "").upper() == "FAIL" and mode != "verify-always-fail":
-            write_app(fixed=True)
+            # In xv-impl-bug mode the first (normal) fix leaves a schema-enum
+            # violation behind; only the cross-validation re-entry repairs it.
+            write_app(fixed=True, broken=mode == "xv-impl-bug" and not xv_reentry)
             result = stage_result(stage, "PASS", next_stage_for(config, stage))
             result["changed_files"] = ["src/app.py"]
             result["history_notes"]["implemented"] = [{"title": "Applied retry fix after verify failure"}]
@@ -259,6 +454,14 @@ def run_stage(prompt: str) -> int:
         result = stage_result(stage, "PASS", next_stage_for(config, stage))
         result["produced_files"] = [docx_path.as_posix()]
         result["changed_files"] = [docx_path.as_posix()]
+    elif stage == plan_stage:
+        result = stage_result(stage, "PASS", next_stage_for(config, stage))
+        if mode != "schemas-missing":
+            schemas_path = write_minimal_schemas(
+                feature, nonconformant=mode == "schemas-nonconformant"
+            )
+            result["produced_files"] = [schemas_path.as_posix()]
+            result["changed_files"] = [schemas_path.as_posix()]
     else:
         result = stage_result(stage, "PASS", next_stage_for(config, stage))
         if stage == "00_specify":
@@ -295,6 +498,8 @@ def main() -> int:
     prompt = sys.stdin.read()
     if "Project Contract Candidate Extraction" in prompt:
         return handle_pc_candidate_prompt(prompt)
+    if prompt_value(prompt, "xv_step"):
+        return handle_xv_prompt(prompt)
     return run_stage(prompt)
 
 

@@ -149,6 +149,7 @@ fast 파이프라인은 `low`와 `medium`을 기본 대상으로 한다.
 ## 위험도 및 파이프라인 판단
 - risk_level: low / medium / high
 - fast_pipeline_allowed: true / false
+- standard_pipeline_recommended: true / false
 - full_pipeline_recommended: true / false
 - 판단 근거:
 

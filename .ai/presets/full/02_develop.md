@@ -6,6 +6,7 @@ model_policy: "preferred_not_hard_block"
 required_inputs:
   - ".project/features/[기능명]/00_spec.md"
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
 outputs:
   - ".project/features/[기능명]/02_dev.md"
 allowed_writes:
@@ -15,6 +16,11 @@ allowed_writes:
 forbidden_writes:
   - ".project/features/[기능명]/00_spec.md"
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
+  - ".project/features/[기능명]/03_review.md"
+  - ".project/features/[기능명]/04_fix.md"
+  - ".project/features/[기능명]/05_verify.md"
+  - ".project/features/[기능명]/06_document.md"
 human_gate_required: false
 commit_policy: "commit_on_pass"
 commit_owner: "harness"
@@ -30,6 +36,7 @@ default_next_stage: "03_review"
 - 새 테스트 파일은 `tests/` 하위에만 만든다. `src/` 하위에 테스트 파일을 만들지 않는다.
 - `requirements.txt`, `run.ps1`, 설정 파일, 의존성 파일, 실행 스크립트 같은 보조 파일도 루트에 만들지 않는다. 필요하면 반드시 `src/` 또는 `tests/` 하위에 둔다.
 - `vendor/`, `packages/`, `dist/`, `build/` 등 외부/생성 산출물 디렉터리는 계획/수정/검증 대상에서 제외하고, 필요하면 생성물 또는 외부 산출물로만 기록한다.
+- `tests/acceptance/`는 블라인드 수용테스트 트랙의 예약 경로다. 이 단계에서 그 하위에 파일을 만들거나 수정하지 않는다. 새 테스트는 `tests/` 하위의 다른 경로(예: `tests/unit/`)에 둔다.
 
 ## 실행 정책
 
@@ -52,6 +59,7 @@ default_next_stage: "03_review"
 
 1. `.project/features/[기능명]/00_spec.md`의 목표, 범위, 요구사항, 제외 항목, 위험도를 파악한다.
 2. `.project/features/[기능명]/01_plan.md`의 구현 접근 방식, 변경 파일 계획, 구현 단계, 위험 구간, 새 의존성, 테스트 전략, Git 기준점을 파악한다.
+2-1. `.project/features/[기능명]/schemas.json`의 인터페이스 스키마(심볼/시그니처/입출력 규약/에러 규약/불변식)를 파악한다. 아래 `인터페이스 스키마 준수` 절을 따른다.
 3. 작업 시작 전 현재 `HEAD`를 `base_commit`으로 기록한다. 01_plan.md에 `base_commit`이 있으면 그 값을 우선한다.
 4. 계획대로 구현한다.
 5. 계획에 없는 작은 결정은 코드베이스 컨벤션에 맞춰 합리적으로 결정하고 `02_dev.md`에 기록한다.
@@ -84,10 +92,20 @@ default_next_stage: "03_review"
 
 ---
 
+## 인터페이스 스키마 준수 (schemas.json)
+
+- `schemas.json`은 plan 단계가 동결한 인터페이스 법이다. 이 단계는 **읽기 전용**으로 바인딩한다.
+- 구현은 스키마의 심볼 이름, 파라미터 이름/순서, 반환 구조, 에러 규약, 불변식을 그대로 만족시켜야 한다. 테스트가 아니라 **스키마를** 만족시켜라.
+- verify 단계에서 하네스가 구현↔스키마 적합성을 기계 검증한다(심볼 존재, 파라미터 이름/순서). 불일치하면 verify FAIL로 되돌아온다.
+- `schemas.json`을 절대 수정하지 않는다. 수정하면 하네스가 즉시 차단한다(INV-3).
+- 스키마가 잘못됐거나 구현 불가능하면 몰래 우회하지 말고 `계획 변경 필요` 블록으로 멈추고 `next_stage: 01_plan`으로 되돌린다.
+
+---
+
 ## 구현 원칙
 
 - 01_plan.md의 계획을 우선한다.
-- 00_spec.md와 01_plan.md는 이 단계에서 수정하지 않는다.
+- 00_spec.md, 01_plan.md, schemas.json은 이 단계에서 수정하지 않는다.
 - 계획이 실제 코드와 맞지 않으면 코드를 고쳐 계획에 맞추거나, 불가능하면 `계획 변경 필요` 블록을 작성하고 멈춘다.
 - 스펙 또는 계획 자체의 변경이 필요하면 `next_stage: 01_plan` 또는 `00_specify`로 되돌린다.
 - 기존 프로젝트의 디렉토리 구조, 네이밍 컨벤션, 코드 스타일을 따른다.
@@ -187,9 +205,10 @@ default_next_stage: "03_review"
 
 ## 금지 사항
 
-- 01_plan.md를 읽지 않은 채 구현을 시작하지 않는다.
+- 01_plan.md와 schemas.json을 읽지 않은 채 구현을 시작하지 않는다.
 - 01_plan.md의 계획을 사용자 동의 없이 크게 변경하지 않는다.
-- 00_spec.md 또는 01_plan.md를 직접 수정하지 않는다.
+- 00_spec.md, 01_plan.md, schemas.json을 직접 수정하지 않는다(schemas.json 수정은 하네스가 차단한다).
 - 기존 테스트를 삭제하거나 비활성화하지 않는다.
 - 기능 범위를 벗어난 리팩토링을 하지 않는다.
+- `tests/acceptance/` 하위에 파일을 만들거나 수정하지 않는다.
 - `git commit`, `git reset`, `git checkout`, `git rebase`, `git push`를 실행하지 않는다.

@@ -114,6 +114,15 @@ class ClassifyReasonTests(unittest.TestCase):
             orchestrate.CAT_RATE_LIMIT,
         )
 
+    def test_codex_usage_limit_is_rate_limit(self) -> None:
+        # The exact codex usage-limit error. "purchase more credits" must NOT trip
+        # auth/manual ("add credits" != "more credits"); "usage limit" -> rate_limit.
+        reason = (
+            "ERROR: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage "
+            "to purchase more credits or try again at Jun 11th, 2026 9:37 AM."
+        )
+        self.assertEqual(orchestrate.classify_reason(reason), orchestrate.CAT_RATE_LIMIT)
+
 
 class ClassifyOutcomeTests(unittest.TestCase):
     def test_complete_run_json_is_success(self) -> None:
@@ -149,6 +158,27 @@ class ClassifyOutcomeTests(unittest.TestCase):
             "blocked": {
                 "reason": "Provider claude exited with code 1 while running stage 01_develop.",
                 "stdout": str(out),
+            },
+        }
+        category, _ = orchestrate.classify_outcome(run_json, "")
+        self.assertEqual(category, orchestrate.CAT_RATE_LIMIT)
+
+    def test_blocked_stderr_reveals_rate_limit(self) -> None:
+        # codex writes the usage-limit line to STDERR, not stdout; the classifier
+        # must peek at the stderr tail too or it misreads a limit as a flaky exit.
+        tmp = tempfile.mkdtemp(prefix="orch_test_")
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        err = Path(tmp) / "00_specify_attempt1_codex.err.txt"
+        err.write_text(
+            "ERROR: You've hit your usage limit. ... try again at Jun 11th, 2026 9:37 AM.\n",
+            encoding="utf-8",
+        )
+        run_json = {
+            "status": "blocked",
+            "blocked": {
+                "reason": "Provider codex exited with code 1 while running stage 00_specify.",
+                "stdout": str(Path(tmp) / "absent.out.txt"),  # empty/absent stdout stream
+                "stderr": str(err),
             },
         }
         category, _ = orchestrate.classify_outcome(run_json, "")
@@ -276,6 +306,9 @@ class StateTransitionTests(unittest.TestCase):
         original = orchestrate.merge_run_branch
         orchestrate.merge_run_branch = fake_merge  # type: ignore[assignment]
         self.addCleanup(lambda: setattr(orchestrate, "merge_run_branch", original))
+        orig_meta = orchestrate._commit_run_metadata
+        orchestrate._commit_run_metadata = lambda feature: None  # type: ignore[assignment]
+        self.addCleanup(lambda: setattr(orchestrate, "_commit_run_metadata", orig_meta))
         run = {"feature": "f", "request": "x", "state": {"status": "running", "attempts": 1}}
         run_json = {
             "status": "complete",
@@ -360,14 +393,15 @@ class RateLimitPolicyTests(unittest.TestCase):
         self.assertTrue(250 <= delta <= 360, f"expected ~300s, got {delta}")
 
     def test_no_attempt_cap_keeps_waiting_within_deadline(self) -> None:
-        # 50 polls in, still within the 6h window -> still waiting, never failed.
+        # 50 polls in, still within the 24h window -> still waiting, never failed.
         run = self._run(attempts=50, rate_limit_since=datetime.now().isoformat(timespec="seconds"))
         eff = orchestrate.effective_config({}, run)
         orchestrate.apply_policy(run, orchestrate.CAT_RATE_LIMIT, "spend limit", eff, {})
         self.assertEqual(run["state"]["status"], orchestrate.ST_WAITING_RETRY)
 
     def test_past_deadline_escalates_to_manual(self) -> None:
-        old = (datetime.now() - timedelta(hours=7)).isoformat(timespec="seconds")
+        # Past the 24h default ceiling -> give up and escalate to a human.
+        old = (datetime.now() - timedelta(hours=25)).isoformat(timespec="seconds")
         run = self._run(status="waiting_retry", rate_limit_since=old)
         eff = orchestrate.effective_config({}, run)
         orchestrate.apply_policy(run, orchestrate.CAT_RATE_LIMIT, "spend limit", eff, {})
@@ -431,6 +465,7 @@ class PcReviewTests(unittest.TestCase):
         seen: list = []
         self._swap("push_current_branch", lambda: (True, ""))
         self._swap("_run_pc_review", lambda batch, feature: seen.append(feature))
+        self._swap("_commit_run_metadata", lambda feature: None)
         run = {"feature": "f", "request": "x", "state": {"status": "running", "attempts": 1}}
         orchestrate.mark_success(run, {"status": "complete"}, {"pc_review": True})
         self.assertEqual(seen, ["f"])
@@ -439,9 +474,21 @@ class PcReviewTests(unittest.TestCase):
         seen: list = []
         self._swap("push_current_branch", lambda: (True, ""))
         self._swap("_run_pc_review", lambda batch, feature: seen.append(feature))
+        self._swap("_commit_run_metadata", lambda feature: None)
         run = {"feature": "f", "request": "x", "state": {"status": "running", "attempts": 1}}
         orchestrate.mark_success(run, {"status": "complete"})  # no batch -> no review
         self.assertEqual(seen, [])
+
+    def test_mark_success_commits_run_metadata_after_pc_review_before_merge(self) -> None:
+        # The run-meta commit must land on the run branch AFTER pc_review and
+        # BEFORE the merge, so it rides into base. Mocked so the suite stays git-free.
+        order: list = []
+        self._swap("_run_pc_review", lambda batch, feature: order.append("pc_review"))
+        self._swap("_commit_run_metadata", lambda feature: order.append(("run_meta", feature)))
+        self._swap("merge_run_branch", lambda run_json: (order.append("merge"), (True, "merged"))[1])
+        run = {"feature": "feat-x", "request": "x", "state": {"status": "running", "attempts": 1}}
+        orchestrate.mark_success(run, {"status": "complete"}, {"pc_review": True})
+        self.assertEqual(order, ["pc_review", ("run_meta", "feat-x"), "merge"])
 
 
 class FrontlineAndStopLineTests(unittest.TestCase):

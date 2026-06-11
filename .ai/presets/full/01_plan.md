@@ -9,8 +9,10 @@ optional_inputs:
   - "existing_codebase"
 outputs:
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
 allowed_writes:
   - ".project/features/[기능명]/01_plan.md"
+  - ".project/features/[기능명]/schemas.json"
 forbidden_writes:
   - "production_code"
   - "tests"
@@ -56,9 +58,10 @@ default_next_stage: "02_develop"
 4. 최종 접근 방식을 선택하고, 선택 근거와 탈락 대안의 사유를 기록한다.
 5. 변경 파일 계획, 데이터/제어 흐름, 구현 단계, 호환성 검토, 위험 완화 방안, 테스트 전략, 롤백 또는 복구 방향을 구체화한다.
 6. 사용자 판단이 필요하면 아래 `사용자 판단 요청` 형식으로 `status: NEEDS_USER`를 기록하고 멈춘다.
-7. 결과를 `.project/features/[기능명]/01_plan.md`에 작성한다.
-8. `risk_level` 또는 변경 성격상 사람 승인이 필요하면 산출물의 `human_gate_required`를 `true`로 기록한다.
-9. 하네스는 frontmatter의 `human_gate_required: "defer_to_output"`을 보면 `01_plan.md`의 `## 단계 결과` 값을 기준으로 승인 게이트를 판단한다.
+7. 공개/경계 심볼의 인터페이스 스키마를 `.project/features/[기능명]/schemas.json`에 작성한다. (아래 `인터페이스 스키마 작성` 절. 하네스가 이 파일을 기계 검증하며 불완전하면 이 단계는 통과하지 못한다.)
+8. 결과를 `.project/features/[기능명]/01_plan.md`에 작성한다.
+9. `risk_level` 또는 변경 성격상 사람 승인이 필요하면 산출물의 `human_gate_required`를 `true`로 기록한다.
+10. 하네스는 frontmatter의 `human_gate_required: "defer_to_output"`을 보면 `01_plan.md`의 `## 단계 결과` 값을 기준으로 승인 게이트를 판단한다.
 
 ---
 
@@ -74,6 +77,126 @@ default_next_stage: "02_develop"
 - 테스트 전략은 정상 경로, 에러 경로, 엣지 케이스를 포함한다.
 - 스펙에 없는 새 기능을 임의로 추가하지 않는다.
 - 계획이 스펙 변경을 요구하면 `status: NEEDS_USER` 또는 `status: FAIL`로 멈춘다.
+
+---
+
+## 인터페이스 스키마 작성 (schemas.json)
+
+계획 확정 후, 이 feature가 만들거나 바꿀 **공개/경계 심볼**의 인터페이스 스키마를 `.project/features/[기능명]/schemas.json`에 작성한다.
+이 파일은 동결된 법이다: plan만 생성/수정하고, 후속 단계는 읽기 전용으로 바인딩한다. 하네스가 기계 검증하며, 검증 실패 시 plan은 통과하지 못한다.
+
+### 작성 규칙
+
+- 대상은 공개/경계 심볼만이다. 내부 private 헬퍼는 넣지 않는다.
+- 시그니처는 stub 수준 정밀도로 적는다. 후속 단계가 이 이름·파라미터만으로 컴파일되는 코드를 짤 수 있어야 한다.
+- `signature`는 문자열이 아니라 `name`, `parameter_order`, `parameters`, `returns`를 가진 객체다.
+- `parameter_order`는 `parameters`의 key와 정확히 일치해야 한다(누락/초과/중복 금지). 순서는 호출 시그니처의 canonical 순서다. 인자가 없으면 `parameter_order: []`, `parameters: {}`.
+- 각 파라미터는 `type`, `required`, `nullable`, `default`, `constraints`를 모두 명시한다.
+  - `default`는 `{ "kind": "none|literal|computed", "value": ... }` 객체다.
+  - `required: true`면 `default.kind`는 반드시 `"none"`, `required: false`면 `"literal"` 또는 `"computed"`다.
+- `constraints`는 자유 문장이 아니라 rule 객체 배열이다. rule 이름은 의미가 드러나게 자유롭게 정한다(`min`, `max_length`, `regex`, `enum_ref`, `timezone`, `decimal_places`, ...). 각 객체에 비어있지 않은 `rule` 키가 필수다.
+  - 제약이 정말 없으면 빈 배열 대신 `[{ "rule": "none", "description": "왜 제약이 없는지" }]`로 명시한다. 빈 배열은 검증 실패다.
+- `returns`는 `type`, `nullable`, `fields`, `constraints`를 모두 명시한다. 원시값 반환이면 `fields: {}`, 객체 반환이면 각 `fields.<name>`에 `type`, `required`, `nullable`, `constraints`를 명시한다.
+- `errors`는 객체 배열이다. 각 항목은 `condition`(비어있지 않은 `type`을 가진 객체), `raises`, `retryable`을 가지며, `retryable: true`면 `retry_policy`(`max_attempts` 1 이상)가 필수다. 던지는 에러가 없으면 `[]`.
+- `invariants`는 비어있지 않은 `rule` 키를 가진 객체 배열이다. 없으면 `[]`.
+- 스펙의 모호점은 묻어두지 말고 `ambiguity_resolutions`에 **결정해서** 적는다(각 항목은 `topic` + `decision`). 없으면 `[]`.
+- `kind` 해석:
+  - `class`: 생성자 시그니처를 적는다. 공개 메서드는 `경로::클래스.메서드` id의 `method` 심볼로 따로 등재한다.
+  - `method`: `self`/`cls`를 제외한 호출자 관점 시그니처를 적는다.
+  - `endpoint`: 요청 파라미터를 `parameters`로, 응답 바디를 `returns`로 적는다.
+- `change: "delete"` 심볼은 `id`/`kind`/`change`/`signature.name`까지만 적으면 된다(나머지 상세는 면제).
+- `plan_sha`는 `null`로 둔다. plan 커밋 SHA는 하네스가 run 상태에 기록한다.
+- `tree_partition`은 구현 트랙과 블라인드 수용테스트 트랙의 쓰기 경로 분할 선언이다. `test_writes`의 `tests/acceptance/`는 블라인드 트랙 예약 경로이며, 구현 트랙(develop/fix/verify)은 그 하위에 쓰지 않는다.
+- 탐색적 작업이라 인터페이스를 못 박을 수 없으면 `specifiable: false`와 구체적인 `specifiability_reason`을 기록한다. 이 경우 심볼 상세 검증이 면제된다. 남용하지 않는다.
+- **01_plan.md에 스키마 본문을 복창하지 않는다.** md에는 근거/트레이드오프 서술과 "스키마는 schemas.json 참조"만 적는다. schemas.json이 canonical이고 md는 내러티브다.
+
+### 형식 예시
+
+```json
+{
+  "version": 1,
+  "feature": "[기능명]",
+  "frozen": true,
+  "plan_sha": null,
+  "specifiable": true,
+  "symbols": [
+    {
+      "id": "src/services/quote.py::get_quote",
+      "kind": "function",
+      "change": "new",
+      "signature": {
+        "name": "get_quote",
+        "parameter_order": ["symbol", "at"],
+        "parameters": {
+          "symbol": {
+            "type": "str",
+            "required": true,
+            "nullable": false,
+            "default": { "kind": "none", "value": null },
+            "constraints": [
+              { "rule": "min_length", "value": 1 },
+              { "rule": "regex", "pattern": "^[A-Z][A-Z0-9.-]*$", "description": "upper-case ticker" }
+            ]
+          },
+          "at": {
+            "type": "datetime",
+            "required": false,
+            "nullable": true,
+            "default": { "kind": "literal", "value": null },
+            "constraints": [
+              { "rule": "timezone", "value": "UTC", "applies_when": "not_null" }
+            ]
+          }
+        },
+        "returns": {
+          "type": "Quote",
+          "nullable": false,
+          "fields": {
+            "price": {
+              "type": "Decimal",
+              "required": true,
+              "nullable": false,
+              "constraints": [
+                { "rule": "min", "value": 0 },
+                { "rule": "decimal_places", "value": 2 }
+              ]
+            }
+          },
+          "constraints": [
+            { "rule": "object_schema_closed", "allow_extra_fields": false }
+          ]
+        }
+      },
+      "errors": [
+        {
+          "condition": { "type": "unknown_symbol", "parameter": "symbol" },
+          "raises": "UnknownSymbolError",
+          "retryable": false
+        },
+        {
+          "condition": { "type": "provider_network_failure" },
+          "raises": "ProviderError",
+          "retryable": true,
+          "retry_policy": { "max_attempts": 3, "backoff": "exponential", "initial_delay_ms": 200 }
+        }
+      ],
+      "invariants": [
+        { "rule": "no_persistent_side_effects", "scope": "function_call" }
+      ],
+      "ambiguity_resolutions": [
+        {
+          "topic": "at default",
+          "decision": "at=null은 provider 호출 시점의 현재 UTC로 해석함"
+        }
+      ]
+    }
+  ],
+  "tree_partition": {
+    "impl_writes": ["src/", "tests/unit/"],
+    "test_writes": ["tests/acceptance/"]
+  }
+}
+```
 
 ---
 
@@ -140,6 +263,11 @@ default_next_stage: "02_develop"
 - 단계 간 데이터 형태 변화
 - 필요시 간단한 ASCII 다이어그램
 
+## 인터페이스 스키마
+- 스키마는 schemas.json 참조 (본문을 여기에 복창하지 않는다)
+- 스키마 관련 주요 결정/트레이드오프 요약:
+- specifiable: true / false (false면 사유 요약)
+
 ## 구현 단계 분할
 1. 단계 1: 무엇을 하는지 / 어떤 파일 / 완료 기준
 2. 단계 2:
@@ -195,6 +323,7 @@ default_next_stage: "02_develop"
 - risk_level: low / medium / high
 - produced_files:
   - .project/features/[기능명]/01_plan.md
+  - .project/features/[기능명]/schemas.json
 - changed_files:
 - harness_commit_required: true / false
 - commit_created_by_model: false
@@ -211,3 +340,5 @@ default_next_stage: "02_develop"
 - 스펙을 임의로 변경하지 않는다.
 - 모호한 결정을 남긴 채 다음 단계로 넘기지 않는다.
 - 사용자 승인이 필요한 상태를 숨기지 않는다.
+- schemas.json의 스키마 본문을 01_plan.md에 복창하지 않는다(참조만 한다).
+- schemas.json 작성을 생략하지 않는다(`specifiable: false` 강등도 파일 자체는 필수).

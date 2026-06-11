@@ -1,0 +1,86 @@
+deep interview: model=codex profile=standard no_min_rounds clarity_gate=off max_rounds=6
+답변 입력 중 `/done`은 바로 정제, `/cancel`은 취소입니다.
+
+[1/6] intent
+왜?
+cancelled
+deep interview: model=codex profile=standard no_min_rounds clarity_gate=off max_rounds=6
+답변 입력 중 `/done`은 바로 정제, `/cancel`은 취소입니다.
+
+[1/6] intent
+왜?
+
+Recommended command:
+
+python .ai/harness.py run "정제된 요청" --feature f --defaults --yes --deep-thinking
+
+feature: f
+model: codex
+profile: standard
+logs: D:\Workspace\WLI-Copy2\Harness\.project\runs\_deep_interview\logs
+deep interview: model=codex profile=standard no_min_rounds clarity_gate=off max_rounds=6
+답변 입력 중 `/done`은 바로 정제, `/cancel`은 취소입니다.
+
+[1/6] intent
+왜 필요한가요?
+
+Recommended command:
+
+python .ai/harness.py run "검색 속도를 개선한다" --feature search-speed --defaults --yes --deep-thinking
+
+feature: search-speed
+model: codex
+profile: standard
+logs: D:\Workspace\WLI-Copy2\Harness\.project\runs\_deep_interview\logs
+deep interview: model=codex profile=standard min_rounds=1 clarity_gate=off max_rounds=6
+답변 입력 중 `/done`은 바로 정제, `/cancel`은 취소입니다.
+deep interview: model=codex profile=standard no_min_rounds clarity_gate=off max_rounds=6
+답변 입력 중 `/done`은 바로 정제, `/cancel`은 취소입니다.
+
+[1/6] intent
+왜?
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [agy] deep_thinking_draft_dropped: draft from agy dropped: exited with code 9 (provider=agy)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [agy] deep_thinking_draft_dropped: draft from agy dropped: exited with code 9 (provider=agy)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [claude] deep_thinking_draft_dropped: draft from claude dropped: exited with code 9 (provider=claude)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [harness] deep_thinking_started: deep-thinking plan stage started (iterations=3 providers=agy -> claude -> codex)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [agy] deep_thinking_iteration_started: deep-thinking plan 1/3 started (provider=agy role=initial_plan performance=lite timeout_seconds=30)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [agy] deep_thinking_candidate_completed: deep-thinking plan 1/3 candidate completed (provider=agy role=initial_plan status=PASS)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [claude] deep_thinking_iteration_started: deep-thinking plan 2/3 started (provider=claude role=improve_plan performance=lite timeout_seconds=30)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [claude] deep_thinking_candidate_completed: deep-thinking plan 2/3 candidate completed (provider=claude role=improve_plan status=PASS)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [codex] deep_thinking_iteration_started: deep-thinking plan 3/3 started (provider=codex role=final_plan performance=lite timeout_seconds=30)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [codex] provider_completed: codex completed (provider=codex stdout=.ai/x.out.txt stderr=.ai/x.err.txt elapsed_seconds=0.1)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [codex] deep_thinking_completed: deep-thinking plan stage completed after 3/3 (provider=codex role=final_plan status=PASS)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [harness] deep_thinking_started: deep-thinking plan stage started (iterations=3 providers=agy -> claude -> codex)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [agy] deep_thinking_iteration_started: deep-thinking plan 1/3 started (provider=agy role=initial_plan performance=lite timeout_seconds=30)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [agy] deep_thinking_candidate_completed: deep-thinking plan 1/3 candidate completed (provider=agy role=initial_plan status=PASS)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [claude] deep_thinking_iteration_started: deep-thinking plan 2/3 started (provider=claude role=improve_plan performance=lite timeout_seconds=30)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [claude] deep_thinking_candidate_completed: deep-thinking plan 2/3 candidate completed (provider=claude role=improve_plan status=PASS)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [codex] deep_thinking_iteration_started: deep-thinking plan 3/3 started (provider=codex role=final_plan performance=lite timeout_seconds=30)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [codex] provider_completed: codex completed (provider=codex stdout=.ai/x.out.txt stderr=.ai/x.err.txt elapsed_seconds=0.1)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [codex] deep_thinking_completed: deep-thinking plan stage completed after 3/3 (provider=codex role=final_plan status=PASS)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [agy] deep_thinking_draft_dropped: draft from agy dropped: exited with code 9 (provider=agy)
+[2026-06-10T11:10:04] [demo-feat] [01_plan] [claude] deep_thinking_single_candidate: only one usable draft; promoted without synthesis (provider=claude)
+
+[selftest] integration happy path: starting fast fixture run
+
+[selftest] integration happy path: starting standard fixture run
+
+[selftest] integration happy path: starting full fixture run
+
+[selftest] integration failure: malformed result json
+
+[selftest] integration failure: provider changed Git HEAD
+
+[selftest] integration failure: provider non-zero exit
+
+[selftest] integration failure: provider silent success
+
+[selftest] integration failure: fast verify retry limit
+
+[selftest] integration failure: standard verify retry limit
+
+[selftest] integration failure: full verify retry limit
+
+[selftest] integration failure: write policy violation
+
+[selftest] integration independence: fast run with strict knobs ON
