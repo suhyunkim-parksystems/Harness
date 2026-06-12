@@ -2,8 +2,8 @@
 
 Unit tests pin the static conformance rules of ``schemas_validation.py``
 (ast-based symbol existence and parameter name/order/count for Python,
-token-level checks for other files, endpoint skip, warnings for declared error
-types). Integration tests prove the workflow wiring with the deterministic fake
+token-level checks for other files, endpoint handler existence without
+parameter comparison, warnings for declared error types). Integration tests prove the workflow wiring with the deterministic fake
 provider: a tampered schemas.json blocks before the tampering stage commits
 (INV-3 drift guard), and a schema declaring a symbol the implementation never
 creates downgrades verify PASS to FAIL.
@@ -59,6 +59,7 @@ def symbol(
         "id": symbol_id,
         "kind": kind,
         "change": change,
+        **({"binding": "GET /demo"} if kind == "endpoint" and change != "delete" else {}),
         "signature": {
             "name": symbol_id.rpartition("::")[2],
             "parameter_order": list(order),
@@ -269,12 +270,44 @@ class ConformanceUnitTests(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("weak signal", warnings[0])
 
-    def test_endpoint_is_skipped(self) -> None:
+    def test_endpoint_handler_existence_checked(self) -> None:
+        errors, _ = self.check(
+            schemas([symbol("src/api/routes.py::get_quotes", kind="endpoint")])
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("does not exist", errors[0])
+
+    def test_endpoint_missing_handler_fails(self) -> None:
+        self.write("src/api/routes.py", "def other():\n    return 1\n")
+        errors, _ = self.check(
+            schemas([symbol("src/api/routes.py::get_quotes", kind="endpoint")])
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("get_quotes", errors[0])
+        self.assertIn("not found", errors[0])
+
+    def test_endpoint_handler_parameters_not_compared(self) -> None:
+        # DI/framework injection makes handler parameters legitimately differ
+        # from the declared request schema: existence is the only static check.
+        self.write(
+            "src/api/routes.py",
+            "def get_quotes(request, db, settings=None):\n    return []\n",
+        )
         errors, warnings = self.check(
-            schemas([symbol("api/routes::GET /quotes", kind="endpoint")])
+            schemas([symbol("src/api/routes.py::get_quotes", kind="endpoint")])
         )
         self.assertEqual(errors, [])
         self.assertEqual(warnings, [])
+
+    def test_endpoint_delete_still_present_fails(self) -> None:
+        self.write("src/api/routes.py", "def legacy_quotes():\n    return []\n")
+        errors, _ = self.check(
+            schemas(
+                [symbol("src/api/routes.py::legacy_quotes", kind="endpoint", change="delete")]
+            )
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("still", errors[0])
 
     def test_path_escape_fails(self) -> None:
         errors, _ = self.check(schemas([symbol("../outside.py::f")]))

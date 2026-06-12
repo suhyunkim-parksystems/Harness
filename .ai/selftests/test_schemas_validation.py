@@ -104,6 +104,29 @@ def valid_symbol() -> dict[str, Any]:
     }
 
 
+def valid_endpoint_symbol() -> dict[str, Any]:
+    return {
+        "id": "src/api/routes.py::get_quotes",
+        "kind": "endpoint",
+        "binding": "GET /api/quotes",
+        "change": "new",
+        "signature": {
+            "name": "get_quotes",
+            "parameter_order": [],
+            "parameters": {},
+            "returns": {
+                "type": "dict",
+                "nullable": False,
+                "fields": {},
+                "constraints": [{"rule": "none", "description": "unit fixture"}],
+            },
+        },
+        "errors": [],
+        "invariants": [],
+        "ambiguity_resolutions": [],
+    }
+
+
 def valid_schemas(feature: str = "demo-feature") -> dict[str, Any]:
     return {
         "version": 1,
@@ -269,6 +292,47 @@ class SchemasDataValidationTests(unittest.TestCase):
         data["symbols"][0]["id"] = "get_quote"
         errors = validate_schemas_data(data)
         self.assertIn("'<path>::<symbol>' form", joined(errors))
+
+    def test_endpoint_with_binding_passes(self) -> None:
+        data = valid_schemas()
+        data["symbols"].append(valid_endpoint_symbol())
+        self.assertEqual(validate_schemas_data(data, feature="demo-feature"), [])
+
+    def test_endpoint_without_binding_fails(self) -> None:
+        data = valid_schemas()
+        endpoint = valid_endpoint_symbol()
+        del endpoint["binding"]
+        data["symbols"].append(endpoint)
+        errors = validate_schemas_data(data)
+        self.assertIn("binding: required for endpoint symbols", joined(errors))
+
+    def test_endpoint_route_style_id_fails(self) -> None:
+        # The regression that motivated binding: a bare route is not a code
+        # coordinate and must be rejected by the '<path>::<symbol>' rule.
+        data = valid_schemas()
+        endpoint = valid_endpoint_symbol()
+        endpoint["id"] = "GET /api/quotes"
+        data["symbols"].append(endpoint)
+        errors = validate_schemas_data(data)
+        self.assertIn("'<path>::<symbol>' form", joined(errors))
+
+    def test_endpoint_delete_without_binding_passes(self) -> None:
+        data = valid_schemas()
+        data["symbols"].append(
+            {
+                "id": "src/api/routes.py::legacy_quotes",
+                "kind": "endpoint",
+                "change": "delete",
+                "signature": {"name": "legacy_quotes"},
+            }
+        )
+        self.assertEqual(validate_schemas_data(data), [])
+
+    def test_binding_present_but_not_string_fails(self) -> None:
+        data = valid_schemas()
+        data["symbols"][0]["binding"] = 123
+        errors = validate_schemas_data(data)
+        self.assertIn("binding: must be a non-empty string when present", joined(errors))
 
     def test_specifiable_false_with_reason_minimal_passes(self) -> None:
         data = {

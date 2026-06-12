@@ -103,7 +103,7 @@ default_next_stage: "02_develop"
 - `kind` 해석:
   - `class`: 생성자 시그니처를 적는다. 공개 메서드는 `경로::클래스.메서드` id의 `method` 심볼로 따로 등재한다.
   - `method`: `self`/`cls`를 제외한 호출자 관점 시그니처를 적는다.
-  - `endpoint`: 요청 파라미터를 `parameters`로, 응답 바디를 `returns`로 적는다.
+  - `endpoint`: id는 라우트가 아니라 **핸들러의 코드 좌표**(`경로::핸들러명`)로 적는다(예: `src/api/routes.py::get_quotes`). 외부 노출 정체성(라우트/명령/토픽)은 필수 필드 `binding`에 비어있지 않은 문자열로 적는다(예: `"GET /api/quotes"`, `"cli: mytool sync"`, `"topic: orders.created"`). 요청 파라미터를 `parameters`로, 응답 바디를 `returns`로 적는다. 하네스는 핸들러 존재까지 정적 검증하고, binding 수준 계약은 수용 테스트가 담당한다.
 - `change: "delete"` 심볼은 `id`/`kind`/`change`/`signature.name`까지만 적으면 된다(나머지 상세는 면제).
 - `plan_sha`는 `null`로 둔다. plan 커밋 SHA는 하네스가 run 상태에 기록한다.
 - `tree_partition`은 구현 트랙과 블라인드 수용테스트 트랙의 쓰기 경로 분할 선언이다. `test_writes`의 `tests/acceptance/`는 블라인드 트랙 예약 경로이며, 구현 트랙(develop/fix/verify)은 그 하위에 쓰지 않는다.

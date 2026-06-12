@@ -162,6 +162,21 @@ def _validate_symbol(
             f"{label}: change: must be one of {'|'.join(ALLOWED_CHANGES)}, got {change!r}"
         )
 
+    # Endpoints anchor their id to the handler's code coordinate like every
+    # other kind; the externally exposed identity (route/command/topic) lives
+    # in `binding` so it stays machine-readable for the acceptance track.
+    binding = symbol.get("binding")
+    if kind == "endpoint" and change != "delete":
+        if not _is_nonempty_str(binding):
+            errors.append(
+                f"{label}: binding: required for endpoint symbols -- the externally exposed "
+                "identity as a non-empty string (e.g. 'GET /api/quotes', 'cli: mytool sync', "
+                "'topic: orders.created'); the id must be the handler's code coordinate "
+                "'<path>::<handler>'"
+            )
+    elif binding is not None and not _is_nonempty_str(binding):
+        errors.append(f"{label}: binding: must be a non-empty string when present")
+
     signature = symbol.get("signature")
     if not isinstance(signature, dict):
         errors.append(
@@ -475,10 +490,13 @@ def _validate_tree_partition(errors: list[str], value: Any) -> None:
 # Decided depth (UPGRADE_PROGRESS, 2026-06-11): Python files are checked with
 # ``ast`` for symbol existence plus parameter names/order/count; declared type
 # strings are NOT compared (abstract notation, false-fail risk). Non-Python
-# files get a token-presence check only. ``kind: endpoint`` is skipped (routes
-# are not statically locatable). Declared error types are a weak static signal
-# and produce non-blocking warnings only -- acceptance tests own the strong
-# guarantee (Phase 3).
+# files get a token-presence check only. ``kind: endpoint`` ids anchor the
+# handler's code coordinate, so handler existence IS checked; parameter
+# comparison is skipped (request parameters legitimately differ from the
+# handler signature under DI/framework injection) and the route-level contract
+# declared in ``binding`` is owned by acceptance tests. Declared error types
+# are a weak static signal and produce non-blocking warnings only --
+# acceptance tests own the strong guarantee (Phase 3).
 
 PYTHON_SUFFIXES = (".py", ".pyw")
 
@@ -559,8 +577,6 @@ def _check_symbol_conformance(
     symbol_name = symbol_name.strip()
     kind = symbol.get("kind")
     change = symbol.get("change")
-    if kind == "endpoint":
-        return  # not statically locatable; acceptance tests own endpoints
 
     file_path = _resolve_symbol_file(root, raw_path)
     if file_path is None:
@@ -679,6 +695,12 @@ def _check_python_symbol(
             f"{label}: symbol {symbol_name!r} not found in {raw_path} "
             "(searched module top level and direct class members)"
         )
+        return
+
+    if kind == "endpoint":
+        # Handler existence is the static guarantee; its parameters legitimately
+        # differ from the declared request schema (DI/framework injection), and
+        # the route-level contract in `binding` is owned by acceptance tests.
         return
 
     declared = _declared_parameter_order(symbol)
